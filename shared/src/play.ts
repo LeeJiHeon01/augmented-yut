@@ -407,7 +407,7 @@ function onCaptured(state: GameState, victimOwner: PlayerId, victims: Piece[], c
   return next;
 }
 
-/** O-G11: the victim loses one active use and the capturer gets one back. */
+/** O-G11: the captured player loses one use of a random active (nobody gets one back: limits stay hard). */
 function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, random: () => number): GameState {
   const victim = playerOf(state, victimOwner);
   const theirs = victim.augmentIds.filter((id) => ACTIVE_IDS.has(id));
@@ -418,14 +418,6 @@ function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, rand
     augmentUses: { ...p.augmentUses, [pick]: (p.augmentUses[pick] ?? 0) + 1 },
   }));
   next = retireIfSpent(next, victimOwner, pick);
-  const mine = playerOf(next, capturer).augmentIds.filter((id) => ACTIVE_IDS.has(id));
-  const gain = mine[Math.floor(random() * mine.length)];
-  if (gain) {
-    next = updatePlayer(next, capturer, (p) => ({
-      ...p,
-      augmentUses: { ...p.augmentUses, [gain]: (p.augmentUses[gain] ?? 0) - 1 },
-    }));
-  }
   return logEffect(next, capturer, 'O-G11', '상대 액티브 사용 횟수 1회 강탈');
 }
 

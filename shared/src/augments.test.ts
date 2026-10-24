@@ -376,7 +376,8 @@ describe('capture passives', () => {
     expect(player(capture({ a: ['A-G7'] }), 'b').status.moveBonus).toBe(-1);
     const stolen = capture({ a: ['O-G11', 'O-S13'], b: ['A-G12'] });
     expect(player(stolen, 'b').augmentUses['A-G12']).toBe(1);
-    expect(player(stolen, 'a').augmentUses['O-S13']).toBe(-1);
+    // Nothing comes back to the capturer: usage limits stay hard.
+    expect(player(stolen, 'a').augmentUses['O-S13']).toBeUndefined();
     expect(player(capture({ a: ['A-G5'] }), 'a').status.moveBonus).toBe(2);
     expect(player(capture({ a: ['O-S11'] }), 'a').status.bonusRerolls).toBe(1);
   });
