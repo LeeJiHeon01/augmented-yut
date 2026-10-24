@@ -9,6 +9,7 @@ function setup() {
     pickMs: 20_000,
     awayTurnMs: 2_000,
     graceMs: 30_000,
+    lobbyGraceMs: 5_000,
     random: () => 0.1,
     newCode: () => '123456',
     onChange: (code, view) => views.set(code, view),
@@ -122,17 +123,17 @@ describe('createHub', () => {
     expect(views.get(code)?.game?.throwCount).toBe(1);
   });
 
-  it('keeps a dropped lobby seat for the grace period, then frees it', () => {
+  it('keeps a dropped lobby seat for a page reload (5s), then frees it', () => {
     const { hub, views } = setup();
     const code = hub.create('a', '달빛선비');
     hub.join('b', code, '솔바람');
     hub.disconnect('b');
     expect(views.get(code)?.seats.find((s) => s.id === 'b')?.connected).toBe(false);
-    vi.advanceTimersByTime(29_000);
+    vi.advanceTimersByTime(4_000);
     expect(hub.reconnect('b')).toBe(code);
     expect(views.get(code)?.seats.find((s) => s.id === 'b')?.connected).toBe(true);
     hub.disconnect('b');
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(5_000);
     expect(views.get(code)?.seats.map((s) => s.id)).toEqual(['a']);
     expect(hub.reconnect('b')).toBeUndefined();
   });

@@ -20,8 +20,10 @@ export interface HubOptions {
   pickMs: number;
   /** Time before acting for a disconnected player. */
   awayTurnMs: number;
-  /** How long a dropped player keeps a lobby seat (and an emptied game stays open). */
+  /** How long an emptied game stays open for players to come back. */
   graceMs: number;
+  /** How long a dropped player keeps a lobby seat (long enough for a page reload). */
+  lobbyGraceMs: number;
   random?: () => number;
   newCode: () => string;
   /** Full view for the room; strip it per viewer (`viewFor`) before sending. */
@@ -89,7 +91,8 @@ export function createHub(options: HubOptions) {
     if (!code || !record) return;
     commit(code, setConnected(record.room, playerId, false));
     clearGrace(playerId);
-    graceTimers.set(playerId, setTimeout(() => expire(playerId), options.graceMs));
+    const ms = record.room.game ? options.graceMs : options.lobbyGraceMs;
+    graceTimers.set(playerId, setTimeout(() => expire(playerId), ms));
   }
 
   /** Back with the same session: returns the room code to rejoin, if any. */
