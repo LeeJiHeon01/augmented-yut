@@ -1,7 +1,8 @@
 import { retireIfSpent, useAugment, type AugmentTarget } from './actives';
 import { chaosDue, runChaos } from './chaos';
 import { autoPick, draftDue, openDraft } from './draft';
-import { lastPlaceOf, leaderOf, logEffect, owns, playerOf, rollFor, updateStatus, type Roll } from './effects';
+import { lastPlaceOf, leaderOf, logEffect, playerOf, ready, rollFor, spendUse, updateStatus, type Roll } from './effects';
+import { augmentById } from './augment';
 import {
   newFieldState,
   newPlayerStatus,
@@ -69,7 +70,7 @@ export function throwYut(state: GameState, playerId: PlayerId, random: () => num
   const player = playerOf(state, playerId);
 
   // O-P8: the first throw of each turn is thrown twice and the player keeps one.
-  if (owns(state, playerId, 'O-P8') && player.status.turn.throws === 0 && !player.status.forced && !player.reserved) {
+  if (ready(state, playerId, 'O-P8') && player.status.turn.throws === 0 && !player.status.forced && !player.reserved) {
     return { ...state, phase: 'CHOOSE', field: { ...state.field, choice: [throwSticks(random), throwSticks(random)] } };
   }
   // C-S4: throw for me and a random opponent, then swap the results.
@@ -102,11 +103,11 @@ function acceptThrow(state: GameState, playerId: PlayerId, roll: Roll, random: (
 
   let bonus = 0;
   const effects: { augmentId: string; detail: string }[] = [];
-  if (fromYutOrMo && owns(state, playerId, 'O-G12')) {
+  if (fromYutOrMo && ready(state, playerId, 'O-G12')) {
     bonus++;
     effects.push({ augmentId: 'O-G12', detail: '추가 던지기 결과 +1칸' });
   }
-  if (player.status.turn.throws === 0 && state.players.length > 1 && lastPlaceOf(state) === playerId && owns(state, playerId, 'A-S3')) {
+  if (player.status.turn.throws === 0 && state.players.length > 1 && lastPlaceOf(state) === playerId && ready(state, playerId, 'A-S3')) {
     bonus++;
     effects.push({ augmentId: 'A-S3', detail: '꼴찌 첫 던지기 +1칸' });
   }
@@ -143,6 +144,8 @@ function acceptThrow(state: GameState, playerId: PlayerId, roll: Roll, random: (
     log: [...state.log, { kind: 'THROW', playerId, auto: false, ...roll }],
   };
   for (const e of effects) next = logEffect(next, playerId, e.augmentId, e.detail);
+  // A throw passive that decided or changed this result (A-G8, O-S14, boosts, O-P8) loses one use.
+  if (roll.augmentId && augmentById(roll.augmentId)?.kind === 'PASSIVE') next = spendUse(next, playerId, roll.augmentId);
   // A reservation spent by this throw may have been the augment's last use.
   if (usedReserve && player.reserved) next = retireIfSpent(next, playerId, player.reserved.augmentId);
   return settle(random, next);
@@ -224,7 +227,7 @@ export function splitResult(
   random: () => number = Math.random,
 ): GameState {
   assertTurn(state, playerId);
-  if (!owns(state, playerId, 'O-G1')) throw new RuleError('분할 이동 증강이 없어요');
+  if (!ready(state, playerId, 'O-G1')) throw new RuleError('분할 이동 증강이 없어요');
   if (state.phase !== 'MOVE' && state.phase !== 'THROW') throw new RuleError('지금은 나눌 수 없어요');
   const index = state.pendingResults.indexOf(result);
   const total = YUT_STEPS[result];

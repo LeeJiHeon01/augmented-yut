@@ -104,7 +104,7 @@ export function Board(props: BoardProps) {
   const targetNodes = stacks.filter((s) => moverAt.has(keyOf(s))).map((s) => s.node);
 
   return (
-    <div className="absolute top-[175px] left-[395px] size-[650px]">
+    <div className="absolute top-[215px] left-[395px] size-[650px]">
       <div className="absolute top-[23px] left-[23px] size-[604px] rounded-[30px] border border-bronze bg-gradient-to-b from-[#20334c] via-[#14263d] via-55% to-[#102035] shadow-[0_16px_40px_rgba(0,0,0,0.25)]" />
       <div className="absolute top-[34px] left-[34px] size-[582px] rounded-[24px] border border-[rgba(180,155,105,0.31)]" />
       <div className="absolute top-[49px] left-[49px] size-[552px] rounded-[18px] border border-[rgba(180,155,105,0.13)]" />

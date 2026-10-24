@@ -12,9 +12,10 @@ import {
 import {
   finishedCount,
   logEffect,
-  owns,
   playerOf,
-  spendOnce,
+  ready,
+  retireIfSpent,
+  spendUse,
   updatePlayer,
   updateStatus,
 } from './effects';
@@ -60,21 +61,16 @@ export function extraFor(state: GameState, result: YutResult): boolean {
   return (result === 'YUT' || result === 'MO') && !chaosOn(state, 'E7');
 }
 
-/**
- * Shortcut rule for a piece owner: E4 opens every corner for everyone, O-S7 always turns,
- * someone else's O-P7 blocks shortcuts.
- */
+/** Shortcut rule for a piece owner: E4 opens every corner for everyone, O-S7 turns while it has uses. */
 export function shortcutMode(state: GameState, owner: PlayerId): ShortcutMode {
-  if (chaosOn(state, 'E4') || owns(state, owner, 'O-S7')) return 'ALWAYS';
-  const monopoly = state.players.some((p) => p.id !== owner && p.augmentIds.includes('O-P7'));
-  return monopoly && !owns(state, owner, 'O-P7') ? 'NEVER' : 'NORMAL';
+  return chaosOn(state, 'E4') || ready(state, owner, 'O-S7') ? 'ALWAYS' : 'NORMAL';
 }
 
 /** Results a thrown result may be used as; the first entry is the result itself. */
 export function resultChoices(state: GameState, playerId: PlayerId, result: YutResult): YutResult[] {
   const choices = [result];
-  if (result === 'BACKDO' && (owns(state, playerId, 'O-S1') || owns(state, playerId, 'A-S14'))) choices.push('DO');
-  if (result === 'DO' && owns(state, playerId, 'O-S9')) choices.push('GAE');
+  if (result === 'BACKDO' && (ready(state, playerId, 'O-S1') || ready(state, playerId, 'A-S14'))) choices.push('DO');
+  if (result === 'DO' && ready(state, playerId, 'O-S9')) choices.push('GAE');
   return choices;
 }
 
@@ -88,8 +84,8 @@ export interface MovePlan {
   route: NodeId[];
   landing: Landing;
   bonuses: MoveBonus[];
-  /** Status the move spends. */
-  spends: { moveBonus: boolean; lonely: boolean; guide: boolean; lastStep: boolean; enemy: boolean };
+  /** Status the move spends; `passives` lose one use each when the move is made. */
+  spends: { moveBonus: boolean; lonely: boolean; enemy: boolean; passives: string[] };
 }
 
 function isFrozen(state: GameState, piece: Piece): boolean {
@@ -150,8 +146,15 @@ export function planMove(state: GameState, playerId: PlayerId, move: Move): Move
   const spot = spotOf(piece);
   const mode = shortcutMode(state, piece.owner);
   let used = move.as ?? move.result;
+  const passives: string[] = [];
+  // Using a result as another one spends the augment that allowed it.
+  if (move.as === 'DO') passives.push(ready(state, playerId, 'O-S1') ? 'O-S1' : 'A-S14');
+  if (move.as === 'GAE') passives.push('O-S9');
   // O-S15: Backdo counts as Do once a piece is past the last corner.
-  if (used === 'BACKDO' && !enemy && spot && LAST_STRETCH.has(spot.node) && owns(state, playerId, 'O-S15')) used = 'DO';
+  if (used === 'BACKDO' && !enemy && spot && LAST_STRETCH.has(spot.node) && ready(state, playerId, 'O-S15')) {
+    used = 'DO';
+    passives.push('O-S15');
+  }
   const base = YUT_STEPS[used];
   if (base < 0 && !spot) throw new RuleError('빽도로는 새 말을 낼 수 없어요');
 
@@ -161,7 +164,7 @@ export function planMove(state: GameState, playerId: PlayerId, move: Move): Move
     base > 0 &&
     ((!enemy && ['DO', 'GAE', 'GEOL'].includes(used) && player.status.reverseUntil > player.regularTurnsCompleted) ||
       worldReversed);
-  const spends = { moveBonus: false, lonely: false, guide: false, lastStep: false, enemy };
+  const spends = { moveBonus: false, lonely: false, enemy, passives };
   const bonuses: MoveBonus[] = [];
 
   if (base < 0 && worldReversed && spot) {
@@ -175,12 +178,14 @@ export function planMove(state: GameState, playerId: PlayerId, move: Move): Move
   }
 
   if (!enemy) {
-    if (!spot && owns(state, playerId, 'O-S2')) bonuses.push({ augmentId: 'O-S2', steps: 1 });
-    if (!spot && owns(state, playerId, 'A-S1')) bonuses.push({ augmentId: 'A-S1', steps: 1 });
-    if (spot && owns(state, playerId, 'A-S6') && enemyAhead(state, spot, playerId, mode)) {
+    if (!spot && ready(state, playerId, 'O-S2')) bonuses.push({ augmentId: 'O-S2', steps: 1 });
+    if (!spot && ready(state, playerId, 'A-S1')) bonuses.push({ augmentId: 'A-S1', steps: 1 });
+    if (spot && ready(state, playerId, 'A-S6') && enemyAhead(state, spot, playerId, mode)) {
       bonuses.push({ augmentId: 'A-S6', steps: 1 });
     }
-    if (owns(state, playerId, 'A-S13') && movers.length === 1 && !player.status.turn.lonelyUsed) {
+    // O-P7 천리마: a Yut or Mo move goes three spaces further.
+    if ((used === 'YUT' || used === 'MO') && ready(state, playerId, 'O-P7')) bonuses.push({ augmentId: 'O-P7', steps: 3 });
+    if (ready(state, playerId, 'A-S13') && movers.length === 1 && !player.status.turn.lonelyUsed) {
       bonuses.push({ augmentId: 'A-S13', steps: 1 });
       spends.lonely = true;
     }
@@ -194,23 +199,20 @@ export function planMove(state: GameState, playerId: PlayerId, move: Move): Move
   let path = routeForward(spot, total(), mode);
 
   if (!enemy) {
-    // A-S9: the first shortcut entry of the game adds one step.
-    const guide = owns(state, playerId, 'A-S9') && !player.status.spent.includes('A-S9');
-    if (guide && path.route.some((n) => SHORTCUT_ENTRY.has(n))) {
+    // A-S9: entering a shortcut adds one step.
+    if (ready(state, playerId, 'A-S9') && path.route.some((n) => SHORTCUT_ENTRY.has(n))) {
       bonuses.push({ augmentId: 'A-S9', steps: 1 });
-      spends.guide = true;
       path = routeForward(spot, total(), mode);
     }
-    // A-S15: one space short of finishing still finishes, once per piece.
-    const lastStep =
-      path.landing !== 'FINISHED' &&
-      path.landing.node === HOME &&
-      owns(state, playerId, 'A-S15') &&
-      !state.field.pieceSpent.includes(`A-S15:${piece.id}`);
-    if (lastStep) {
+    // A-S15: one space short of finishing still finishes.
+    if (path.landing !== 'FINISHED' && path.landing.node === HOME && ready(state, playerId, 'A-S15')) {
       bonuses.push({ augmentId: 'A-S15', steps: 1 });
-      spends.lastStep = true;
       path = { route: path.route, landing: 'FINISHED' };
+    }
+    // O-S7 counts only when passing a corner really took a shortcut.
+    if (mode === 'ALWAYS' && !chaosOn(state, 'E4')) {
+      const plain = routeForward(spot, total(), 'NORMAL');
+      if (plain.route.join() !== path.route.join()) passives.push('O-S7');
     }
   }
 
@@ -327,7 +329,7 @@ function protect(
   node: NodeId,
   random: () => number,
 ): { state: GameState; victims: Piece[] } {
-  const has = (id: string) => owns(state, victimOwner, id);
+  const has = (id: string) => ready(state, victimOwner, id);
   const keep = (next: GameState, id: string, detail: string) => ({
     state: logEffect(next, victimOwner, id, detail),
     victims: [] as Piece[],
@@ -335,34 +337,28 @@ function protect(
   if (has('O-S5') && CORNERS.includes(node)) return keep(state, 'O-S5', '꼭짓점에서 잡히지 않음');
   if (has('O-G10') && START_ZONE.has(node)) return keep(state, 'O-G10', '출발 3칸 안에서 잡히지 않음');
   if (has('O-P3') && victims.length >= 3) return keep(state, 'O-P3', '3개 이상 업힌 말은 잡히지 않음');
-  const victim = playerOf(state, victimOwner);
-  if (has('A-G4') && (victim.augmentUses['A-G4'] ?? 0) < 2) {
-    const used = updatePlayer(state, victimOwner, (p) => ({
-      ...p,
-      augmentUses: { ...p.augmentUses, 'A-G4': (p.augmentUses['A-G4'] ?? 0) + 1 },
-    }));
-    return keep(used, 'A-G4', '잡힘 방어 · 그 자리 유지');
-  }
+  if (has('A-G4')) return keep(state, 'A-G4', '잡힘 방어 · 그 자리 유지');
   let next = state;
+  // Chance defences spend a use on every try, hit or miss.
   if (has('C-S14')) {
-    const spent = spendOnce(next, victimOwner, 'C-S14');
-    if (spent) {
-      next = spent;
-      if (random() < 0.5) return keep(next, 'C-S14', '50% 생존 성공');
-    }
+    if (random() < 0.5) return keep(next, 'C-S14', '50% 생존 성공');
+    next = logEffect(next, victimOwner, 'C-S14', '50% 생존 실패');
   }
-  if (has('A-S2') && random() < 0.25) return keep(next, 'A-S2', '잡힘 회피');
+  if (has('A-S2')) {
+    if (random() < 0.25) return keep(next, 'A-S2', '잡힘 회피');
+    next = logEffect(next, victimOwner, 'A-S2', '잡힘 회피 실패');
+  }
 
   let left = victims;
-  if (has('A-P3')) {
-    const saved = left.filter((p) => !next.field.pieceSpent.includes(`A-P3:${p.id}`));
+  // A-P3: pieces caught for the first time survive where they are.
+  if (ready(next, victimOwner, 'A-P3')) {
+    const saved = left.filter((p) => !next.field.hits[p.id]);
     if (saved.length > 0) {
-      next = { ...next, field: { ...next.field, pieceSpent: [...next.field.pieceSpent, ...saved.map((p) => `A-P3:${p.id}`)] } };
       next = logEffect(next, victimOwner, 'A-P3', `첫 잡힘 생존 · 말 ${saved.length}개`);
       left = left.filter((p) => !saved.includes(p));
     }
   }
-  const stackShield = has('A-S5') ? 'A-S5' : has('O-G2') ? 'O-G2' : null;
+  const stackShield = ready(next, victimOwner, 'A-S5') ? 'A-S5' : ready(next, victimOwner, 'O-G2') ? 'O-G2' : null;
   if (stackShield && left.length >= 2) {
     next = logEffect(next, victimOwner, stackShield, `업힌 말 중 1개만 귀환`);
     left = left.slice(0, 1);
@@ -379,7 +375,7 @@ function onCaptured(state: GameState, victimOwner: PlayerId, victims: Piece[], c
   const hits = { ...next.field.hits };
   for (const p of victims) hits[p.id] = (hits[p.id] ?? 0) + 1;
   next = { ...next, field: { ...next.field, hits } };
-  const has = (id: string) => owns(next, victimOwner, id);
+  const has = (id: string) => ready(next, victimOwner, id);
 
   if (has('A-S12') && victims.some((p) => hits[p.id] === 2)) {
     next = logEffect(updateStatus(next, victimOwner, (s) => ({ moveBonus: s.moveBonus + 2 })), victimOwner, 'A-S12', '다음 이동 +2칸');
@@ -392,12 +388,9 @@ function onCaptured(state: GameState, victimOwner: PlayerId, victims: Piece[], c
     next = { ...next, field: { ...next.field, interruptQueue: [...next.field.interruptQueue, victimOwner] } };
     next = logEffect(next, victimOwner, 'O-S6', '즉시 추가 던지기 1회');
   }
-  if (has('C-S9')) {
-    const spent = spendOnce(next, victimOwner, 'C-S9');
-    const head = pieceById(next, ctx.headId);
-    if (spent && head?.state.kind === 'ON_BOARD') {
-      next = logEffect(sendHome(spent, [head.id]), victimOwner, 'C-S9', '잡은 상대 말도 귀환');
-    }
+  const avenger = pieceById(next, ctx.headId);
+  if (has('C-S9') && avenger?.state.kind === 'ON_BOARD') {
+    next = logEffect(sendHome(next, [avenger.id]), victimOwner, 'C-S9', '잡은 상대 말도 귀환');
   }
   if (has('O-G5') || has('A-G13')) {
     const id = has('O-G5') ? 'O-G5' : 'A-G13';
@@ -407,10 +400,10 @@ function onCaptured(state: GameState, victimOwner: PlayerId, victims: Piece[], c
     next = { ...next, field: { ...next.field, frozen: [...next.field.frozen, ...movers.map((p) => ({ pieceId: p.id, turn }))] } };
     next = logEffect(next, victimOwner, id, '잡은 말은 다음 턴 이동 불가');
   }
-  if (owns(next, capturer, 'A-G7')) {
+  if (ready(next, capturer, 'A-G7')) {
     next = logEffect(updateStatus(next, victimOwner, (s) => ({ moveBonus: s.moveBonus - 1 })), capturer, 'A-G7', '잡힌 상대 다음 이동 -1칸');
   }
-  if (owns(next, capturer, 'O-G11')) next = steal(next, capturer, victimOwner, ctx.random);
+  if (ready(next, capturer, 'O-G11')) next = steal(next, capturer, victimOwner, ctx.random);
   return next;
 }
 
@@ -424,7 +417,7 @@ function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, rand
     ...p,
     augmentUses: { ...p.augmentUses, [pick]: (p.augmentUses[pick] ?? 0) + 1 },
   }));
-  next = retireSpent(next, victimOwner, pick);
+  next = retireIfSpent(next, victimOwner, pick);
   const mine = playerOf(next, capturer).augmentIds.filter((id) => ACTIVE_IDS.has(id));
   const gain = mine[Math.floor(random() * mine.length)];
   if (gain) {
@@ -439,16 +432,11 @@ function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, rand
 /** Ids of augments used by pressing them (set by actives.ts to avoid an import cycle). */
 export const ACTIVE_IDS = new Set<string>();
 
-/** Set by actives.ts: take a used-up active out of the hand. */
-let retireSpent: (state: GameState, playerId: PlayerId, augmentId: string) => GameState = (s) => s;
-export function setRetire(fn: typeof retireSpent): void {
-  retireSpent = fn;
-}
 
 /** Rewards for the capturing player; `extra` is on top of the normal capture throw. */
 function onCapture(state: GameState, victimOwner: PlayerId, count: number, ctx: LandingContext): { state: GameState; extra: number } {
   const me = pieceById(state, ctx.headId)?.owner ?? ctx.actor;
-  const has = (id: string) => owns(state, me, id);
+  const has = (id: string) => ready(state, me, id);
   let extra = 0;
   let next = updatePlayer(state, me, (p) => ({
     ...p,
@@ -505,10 +493,9 @@ export function landPieces(state: GameState, ids: readonly string[], landing: La
     if (victims.length === 0) continue;
 
     const ids2 = victims.map((p) => p.id);
-    const sturdy = ctx.defend && owns(next, victimOwner, 'O-S10') ? spendOnce(next, victimOwner, 'O-S10') : null;
-    if (sturdy) {
-      // O-S10: the first capture only pushes the pieces three spaces back.
-      next = logEffect(place(sturdy, ids2, stepsBack(landing, 3)), victimOwner, 'O-S10', '귀환 대신 3칸 후퇴');
+    if (ctx.defend && ready(next, victimOwner, 'O-S10')) {
+      // O-S10: the capture only pushes the pieces three spaces back.
+      next = logEffect(place(next, ids2, stepsBack(landing, 3)), victimOwner, 'O-S10', '귀환 대신 3칸 후퇴');
     } else {
       next = sendHome(next, ids2);
     }
@@ -551,11 +538,10 @@ function spendPlan(state: GameState, playerId: PlayerId, plan: MovePlan): GameSt
   let next = state;
   if (plan.spends.moveBonus) next = updateStatus(next, playerId, () => ({ moveBonus: 0 }));
   if (plan.spends.lonely) next = updateStatus(next, playerId, (s) => ({ turn: { ...s.turn, lonelyUsed: true } }));
-  if (plan.spends.guide) next = updateStatus(next, playerId, (s) => ({ spent: [...s.spent, 'A-S9'] }));
   if (plan.spends.enemy) next = updateStatus(next, playerId, (s) => ({ turn: { ...s.turn, controlEnemy: false } }));
-  if (plan.spends.lastStep) {
-    next = { ...next, field: { ...next.field, pieceSpent: [...next.field.pieceSpent, `A-S15:${plan.piece.id}`] } };
-  }
+  // Passive step bonuses and choices used by this move each lose one use.
+  const passiveBonuses = plan.bonuses.map((b) => b.augmentId).filter((id) => id && id !== 'A-G9');
+  for (const id of [...plan.spends.passives, ...passiveBonuses]) next = spendUse(next, playerId, id);
   return next;
 }
 
@@ -586,7 +572,7 @@ export function executeMove(state: GameState, playerId: PlayerId, move: Move, ra
     }
     ({ state: next, captured, stacked, extraThrows } = landPieces(next, ids, spot, ctx));
     // O-S8: stacking moves the stack one more space.
-    if (stacked > 0 && !plan.spends.enemy && owns(next, playerId, 'O-S8') && pieceById(next, plan.piece.id)?.state.kind === 'ON_BOARD') {
+    if (stacked > 0 && !plan.spends.enemy && ready(next, playerId, 'O-S8') && pieceById(next, plan.piece.id)?.state.kind === 'ON_BOARD') {
       const stackIds = stackOf(next.pieces, pieceById(next, plan.piece.id)!).map((p) => p.id);
       const extra = stepForward(spot, 1, shortcutMode(next, plan.piece.owner));
       next = logEffect(next, playerId, 'O-S8', '업기 보너스 · 1칸 더 이동');

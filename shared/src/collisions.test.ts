@@ -140,12 +140,11 @@ describe('augments sharing another augment’s rule', () => {
     expect(s.field.links).toEqual([{ a: 'a-0', b: 'b-0', owner: 'a', until: 2 }]);
   });
 
-  it('A-P1 fixes the next throw, twice per game', () => {
+  it('A-P1 fixes the next throw, once per game', () => {
     let s = activate(game({ a: ['A-P1'] }), 'a', 'A-P1', { result: 'YUT' });
     s = throwYut(s, 'a', seq(...BACKDO_STICKS));
     expect(s.pendingResults).toEqual(['YUT']);
-    s = activate(s, 'a', 'A-P1', { result: 'MO' });
-    expect(throwYut(s, 'a', seq(...BACKDO_STICKS)).pendingResults).toEqual(['YUT', 'MO']);
+    expect(s.players.find((p) => p.id === 'a')!.retired).toEqual(['A-P1']);
   });
 
   it('A-P5 sends adjacent enemies home like O-P4', () => {

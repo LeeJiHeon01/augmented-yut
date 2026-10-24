@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { augmentById, MAX_AUGMENTS, type Draft, type DraftOffer } from '@yut/shared';
+import { augmentById, MAX_AUGMENTS, usageLimit, type Draft, type DraftOffer } from '@yut/shared';
 import hourglassGold from '../assets/figma/hourglass-gold.svg';
 import knotPopup from '../assets/figma/knot-popup.svg';
 import reroll from '../assets/figma/reroll.svg';
@@ -31,7 +31,7 @@ export function AugmentPick(props: AugmentPickProps) {
 
   return (
     <div className="absolute inset-0 z-40 bg-[rgba(3,8,22,0.72)]">
-      <div className="absolute top-[195px] left-[160px] flex h-[769px] w-[1119px] flex-col items-center rounded-[24px] border border-bronze bg-[rgba(17,29,48,0.97)] px-[47px] pt-[36px] shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
+      <div className="absolute top-[200px] left-[160px] flex min-h-[769px] w-[1119px] flex-col items-center rounded-[24px] border border-bronze bg-[rgba(17,29,48,0.97)] px-[47px] pt-[36px] pb-[28px] shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
         <div className="flex items-center gap-[12px]">
           <div className="h-px w-[80px] bg-bronze" />
           <img alt="" src={knotPopup} className="size-[26px]" />
@@ -94,7 +94,7 @@ export function AugmentPick(props: AugmentPickProps) {
                     className="mt-[12px] rounded-full border px-[10px] py-[3px] text-[11px]"
                     style={{ borderColor: `${tier.color}66`, color: tier.color }}
                   >
-                    {augment ? KIND_LABEL[augment.kind] : ''}
+                    {augment ? `${KIND_LABEL[augment.kind]} · ${usageLimit(augment.id)}회` : ''}
                   </span>
                   <p className="mt-[16px] text-center text-[14px] leading-[22px] text-ink">{augment?.description}</p>
                   {isChosen && (

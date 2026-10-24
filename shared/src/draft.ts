@@ -52,7 +52,7 @@ export function openDraft(state: GameState, random: () => number): GameState {
   const lastPlace = soleLastPlace(state);
   const offers: Record<PlayerId, DraftOffer> = {};
   for (const player of state.players) {
-    const excluded = new Set(player.augmentIds);
+    const excluded = new Set([...player.augmentIds, ...player.retired]);
     const cards: string[] = [];
     for (let i = 0; i < CARDS_PER_OFFER; i++) {
       const card = drawAugment(poolFor(rarity, excluded, state.players.length), random);
@@ -116,7 +116,7 @@ export function rerollAugment(state: GameState, playerId: PlayerId, slot: number
   if (usesFree && offer.freeRerolls < 1) throw new RuleError('이 카드는 이미 리롤했어요');
 
   const player = state.players.find((p) => p.id === playerId);
-  const excluded = new Set([...(player?.augmentIds ?? []), ...offer.cards, ...offer.discarded]);
+  const excluded = new Set([...(player?.augmentIds ?? []), ...(player?.retired ?? []), ...offer.cards, ...offer.discarded]);
   const card = drawAugment(poolFor(state.draft.rarity, excluded, state.players.length), random);
   if (!card) throw new RuleError('더 뽑을 증강이 없어요');
 
@@ -198,13 +198,10 @@ function grantPicks(state: GameState): GameState {
       if (!pick) return p;
       const { replace } = pick;
       if (!replace) return { ...p, augmentIds: [...p.augmentIds, pick.augmentId] };
-      // The swapped-out augment loses its uses and any reservation.
-      const augmentUses = { ...p.augmentUses };
-      delete augmentUses[replace];
+      // The swapped-out augment keeps its use count for this game and drops any reservation.
       return {
         ...p,
         augmentIds: [...p.augmentIds.filter((id) => id !== replace), pick.augmentId],
-        augmentUses,
         reserved: p.reserved?.augmentId === replace ? null : p.reserved,
       };
     }),

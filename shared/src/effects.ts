@@ -1,5 +1,7 @@
 import { RuleError, type GameState, type Player, type PlayerId, type PlayerStatus } from './game';
+import { augmentById } from './augment';
 import { standings } from './standings';
+import { usageLimit } from './usage';
 import { throwSticks, type YutResult } from './yut';
 
 /** Result order used by ±1 adjustments. */
@@ -27,8 +29,45 @@ export function updateStatus(
   return updatePlayer(state, playerId, (p) => ({ ...p, status: { ...p.status, ...change(p.status) } }));
 }
 
+/**
+ * Log an augment effect. For a passive this is the moment it took effect, so it also counts one use
+ * (actives are counted when they are used).
+ */
 export function logEffect(state: GameState, playerId: PlayerId, augmentId: string, detail: string): GameState {
-  return { ...state, log: [...state.log, { kind: 'EFFECT', playerId, augmentId, detail, auto: false }] };
+  const logged: GameState = { ...state, log: [...state.log, { kind: 'EFFECT', playerId, augmentId, detail, auto: false }] };
+  return augmentById(augmentId)?.kind === 'PASSIVE' ? spendUse(logged, playerId, augmentId) : logged;
+}
+
+/** The player holds the augment and still has a use of it left. */
+export function hasUse(player: Player, augmentId: string): boolean {
+  return player.augmentIds.includes(augmentId) && (player.augmentUses[augmentId] ?? 0) < usageLimit(augmentId);
+}
+
+/** Same as `hasUse`, looked up by id. */
+export function ready(state: GameState, playerId: PlayerId, augmentId: string): boolean {
+  const player = state.players.find((p) => p.id === playerId);
+  return player !== undefined && hasUse(player, augmentId);
+}
+
+/** Count one use of an augment that just took effect; a used-up one leaves the hand. */
+export function spendUse(state: GameState, playerId: PlayerId, augmentId: string): GameState {
+  const counted = updatePlayer(state, playerId, (p) => ({
+    ...p,
+    augmentUses: { ...p.augmentUses, [augmentId]: (p.augmentUses[augmentId] ?? 0) + 1 },
+  }));
+  return retireIfSpent(counted, playerId, augmentId);
+}
+
+/** An augment with no uses left leaves the hand (its slot frees up) and is kept in `retired`. */
+export function retireIfSpent(state: GameState, playerId: PlayerId, augmentId: string): GameState {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || !player.augmentIds.includes(augmentId)) return state;
+  if ((player.augmentUses[augmentId] ?? 0) < usageLimit(augmentId) || player.reserved?.augmentId === augmentId) return state;
+  return updatePlayer(state, playerId, (p) => ({
+    ...p,
+    augmentIds: p.augmentIds.filter((id) => id !== augmentId),
+    retired: p.retired.includes(augmentId) ? p.retired : [...p.retired, augmentId],
+  }));
 }
 
 /** Spend a one-shot passive; false when it was already spent. */
@@ -102,7 +141,7 @@ export function rollFor(player: Player, random: () => number): Roll {
   if (player.status.forced) return { result: player.status.forced };
   const reserved = reservedRoll(player, random);
   if (reserved) return reserved;
-  const owned = (id: string) => player.augmentIds.includes(id);
+  const owned = (id: string) => hasUse(player, id);
   if (owned('A-G8') && player.status.smallStreak >= SMALL_STREAK) return { result: 'YUT', augmentId: 'A-G8' };
 
   const thrown = throwSticks(random);

@@ -5,14 +5,15 @@ import {
   leaderOf,
   playerOf,
   RESULT_ORDER,
+  retireIfSpent,
   updatePlayer,
   updateStatus,
 } from './effects';
+import { usageLimit } from './usage';
 import { RuleError, type GameState, type Piece, type Player, type PlayerId } from './game';
 import { stackOf } from './moves';
 import {
   ACTIVE_IDS,
-  setRetire,
   extraFor,
   finishPieces,
   landPieces,
@@ -84,7 +85,6 @@ interface Ctx {
 }
 
 interface ActiveDef {
-  limit: number;
   when: When;
   target: TargetKind;
   /** Results to pick from for RESULT targets. */
@@ -225,7 +225,6 @@ function freshEnemyThrow(state: GameState, playerId: PlayerId): YutResult | null
 // --- definitions ------------------------------------------------------------
 
 const rethrow: ActiveDef = {
-  limit: 2,
   when: 'RETHROW',
   target: 'NONE',
   run: ({ state, playerId }) => {
@@ -244,9 +243,8 @@ const rethrow: ActiveDef = {
   },
 };
 
-function reserve(limit: number, detail: string, choices?: readonly YutResult[]): ActiveDef {
+function reserve(detail: string, choices?: readonly YutResult[]): ActiveDef {
   return {
-    limit,
     when: 'THROW',
     target: choices ? 'RESULT' : 'NONE',
     reserve: true,
@@ -264,7 +262,6 @@ function reserve(limit: number, detail: string, choices?: readonly YutResult[]):
 
 function push(steps: number): ActiveDef {
   return {
-    limit: 1,
     when: 'TURN',
     target: 'ENEMY_DIRECTION',
     run: (ctx) => {
@@ -277,7 +274,6 @@ function push(steps: number): ActiveDef {
 
 /** Enemy pieces next to my piece go home (O-P4, A-P5). */
 const blast: ActiveDef = {
-  limit: 1,
   when: 'TURN',
   target: 'OWN_BOARD_PIECE',
   run: (ctx) => {
@@ -298,16 +294,15 @@ const ALL_RESULTS = RESULT_ORDER;
 const ACTIVES: Record<string, ActiveDef> = {
   'O-S3': rethrow,
   'A-S8': rethrow,
-  'O-S13': reserve(1, '다음 던지기 걸 확정'),
-  'A-G12': reserve(2, '다음 던지기 모 아니면 빽도'),
-  'C-S2': reserve(1, '다음 던지기 윷·모·빽도 확률 상승'),
-  'C-S5': reserve(1, '다음 던지기 도 아니면 모'),
-  'C-S4': reserve(1, '다음 던지기 결과를 무작위 상대와 교환'),
-  'A-S11': reserve(1, '', ['DO', 'GAE', 'GEOL']),
-  'O-P1': reserve(1, '', ALL_RESULTS),
-  'A-P1': reserve(2, '', ALL_RESULTS),
+  'O-S13': reserve('다음 던지기 걸 확정'),
+  'A-G12': reserve('다음 던지기 모 아니면 빽도'),
+  'C-S2': reserve('다음 던지기 윷·모·빽도 확률 상승'),
+  'C-S5': reserve('다음 던지기 도 아니면 모'),
+  'C-S4': reserve('다음 던지기 결과를 무작위 상대와 교환'),
+  'A-S11': reserve('', ['DO', 'GAE', 'GEOL']),
+  'O-P1': reserve('', ALL_RESULTS),
+  'A-P1': reserve('', ALL_RESULTS),
   'C-S7': {
-    limit: 1,
     when: 'THROW',
     target: 'NONE',
     reserve: true,
@@ -322,7 +317,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-S12': {
-    limit: 1,
     when: 'TURN',
     target: 'EMPTY_NODE',
     run: ({ state, playerId, target }) => {
@@ -335,7 +329,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S1': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId }) => ({
@@ -346,7 +339,6 @@ const ACTIVES: Record<string, ActiveDef> = {
   'C-S3': push(PUSH_STEPS['C-S3']!),
   'A-P2': push(PUSH_STEPS['A-P2']!),
   'C-S6': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_BOARD_PIECE',
     run: (ctx) => {
@@ -356,7 +348,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S8': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_AND_ENEMY',
     run: (ctx) => {
@@ -369,7 +360,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S10': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: (state, playerId) => (state.pieces.some((p) => p.owner === playerId && p.state.kind === 'WAITING') ? null : '대기 말이 없어요'),
@@ -381,7 +371,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S11': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state }) => ({
@@ -390,7 +379,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     }),
   },
   'C-S12': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId, random }) => {
@@ -403,7 +391,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S13': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_BOARD_PIECE',
     run: (ctx) => {
@@ -416,7 +403,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-S15': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: (ctx) => {
@@ -441,7 +427,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-G3': {
-    limit: 1,
     when: 'OFF_TURN',
     target: 'NONE',
     run: ({ state, playerId }) => {
@@ -455,7 +440,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-G6': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_BOARD_PIECE',
     run: (ctx) => {
@@ -472,7 +456,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-G9': {
-    limit: 2,
     when: 'PENDING',
     target: 'DELTA',
     run: ({ state, target }) => {
@@ -484,7 +467,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-G13': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_AND_ENEMY',
     run: (ctx) => {
@@ -495,7 +477,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-G2': {
-    limit: 2,
     when: 'TURN',
     target: 'TWO_OWN',
     run: (ctx) => {
@@ -508,7 +489,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-G3': {
-    limit: 1,
     when: 'PENDING',
     target: 'NONE',
     run: ({ state, playerId, random }) => {
@@ -521,7 +501,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-G6': {
-    limit: 2,
     when: 'TURN',
     target: 'OWN_BOARD_PIECE',
     run: (ctx) => {
@@ -533,7 +512,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-G9': {
-    limit: 2,
     when: 'TURN',
     target: 'NONE',
     blocked: (state, playerId) => (lastPlaceOf(state) === playerId ? null : '꼴찌일 때만 쓸 수 있어요'),
@@ -543,7 +521,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     }),
   },
   'A-G10': {
-    limit: 2,
     when: 'TURN',
     target: 'OWN_STACKED_PIECE',
     run: (ctx) => {
@@ -553,7 +530,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-G11': {
-    limit: 1,
     when: 'TURN',
     target: 'ENEMY_PIECE',
     run: (ctx) => {
@@ -564,7 +540,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G1': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId, random }) => {
@@ -576,7 +551,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P2': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: (state) => (state.players.length === 4 ? null : '4명일 때만 쓸 수 있어요'),
@@ -588,7 +562,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G2': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: noLeaderTarget,
@@ -607,7 +580,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G3': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_AND_ENEMY',
     run: (ctx) => {
@@ -617,7 +589,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G4': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId }) => ({
@@ -626,7 +597,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     }),
   },
   'C-G5': {
-    limit: 1,
     when: 'TURN',
     target: 'ANY_PIECE',
     run: (ctx) => {
@@ -637,7 +607,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G6': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state }) => {
@@ -646,7 +615,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G7': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, random }) => {
@@ -666,7 +634,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G8': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_PIECE',
     run: (ctx) => {
@@ -678,7 +645,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G9': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: (state) => {
@@ -694,7 +660,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G10': {
-    limit: 1,
     when: 'TURN',
     target: 'OPPONENT',
     run: (ctx) => {
@@ -703,7 +668,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G11': {
-    limit: 1,
     when: 'TURN',
     target: 'ENEMY_PIECE',
     run: (ctx) => {
@@ -714,7 +678,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G12': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_AND_ENEMY',
     run: (ctx) => {
@@ -726,7 +689,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-G13': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_PIECE',
     run: (ctx) => {
@@ -735,7 +697,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'O-P2': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_BOARD_PIECE',
     run: (ctx) => {
@@ -747,7 +708,6 @@ const ACTIVES: Record<string, ActiveDef> = {
   'O-P4': blast,
   'A-P5': blast,
   'O-P5': {
-    limit: 1,
     when: 'START',
     target: 'NONE',
     blocked: (state, playerId) => {
@@ -757,13 +717,11 @@ const ACTIVES: Record<string, ActiveDef> = {
     run: ({ state }) => ({ state: { ...state, pieces: state.field.previousTurn!.pieces }, detail: '직전 상대 턴 되돌리기' }),
   },
   'O-P6': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId }) => ({ state: updateStatus(state, playerId, () => ({ extraTurn: true })), detail: '이번 턴 뒤 한 번 더' }),
   },
   'A-P4': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: (state, playerId) => {
@@ -778,7 +736,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-P6': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state, playerId }) => ({
@@ -787,7 +744,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     }),
   },
   'A-P7': {
-    limit: 2,
     when: 'PENDING',
     target: 'NONE',
     run: ({ state }) => {
@@ -796,7 +752,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'A-P8': {
-    limit: 1,
     when: 'TURN',
     target: 'ENEMY_PIECE',
     blocked: (state, playerId) => (finishedCount(state, playerId) >= 2 ? null : '말 2개 이상 골인해야 쓸 수 있어요'),
@@ -806,13 +761,11 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P1': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state }) => ({ state: sendHome(state, onBoard(state).map((p) => p.id)), detail: '판 위 모든 말 출발점으로' }),
   },
   'C-P3': {
-    limit: 1,
     when: 'TURN',
     target: 'OWN_PIECE',
     run: (ctx) => {
@@ -825,7 +778,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P4': {
-    limit: 1,
     when: 'TURN',
     target: 'OPPONENT',
     run: (ctx) => {
@@ -839,7 +791,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P5': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: ({ state }) => ({
@@ -848,7 +799,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     }),
   },
   'C-P6': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: (ctx) => {
@@ -888,7 +838,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P7': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     blocked: (state, playerId) => {
@@ -910,7 +859,6 @@ const ACTIVES: Record<string, ActiveDef> = {
     },
   },
   'C-P8': {
-    limit: 1,
     when: 'TURN',
     target: 'NONE',
     run: (ctx) => {
@@ -929,7 +877,6 @@ const ACTIVES: Record<string, ActiveDef> = {
 };
 
 for (const id of Object.keys(ACTIVES)) ACTIVE_IDS.add(id);
-setRetire((state, playerId, augmentId) => retireIfSpent(state, playerId, augmentId));
 
 /** C-S7: the latest throw of the player before me. */
 function copiedResult(state: GameState, playerId: PlayerId): YutResult | null {
@@ -975,10 +922,9 @@ export function activeSpec(augmentId: string): ActiveSpec | null {
 
 export type ActiveStatus = 'READY' | 'SPENT' | 'BLOCKED' | 'RESERVED';
 
-/** Uses left for an active augment, or null for augments without uses. */
-export function usesLeft(player: Player, augmentId: string): number | null {
-  const limit = ACTIVES[augmentId]?.limit;
-  return limit === undefined ? null : Math.max(0, limit - (player.augmentUses[augmentId] ?? 0));
+/** Uses left of any augment (actives and passives alike). */
+export function usesLeft(player: Player, augmentId: string): number {
+  return Math.max(0, usageLimit(augmentId) - (player.augmentUses[augmentId] ?? 0));
 }
 
 function timingOk(state: GameState, player: Player, when: When): boolean {
@@ -1044,7 +990,7 @@ export function activeStatus(state: GameState, playerId: PlayerId, augmentId: st
   const def = ACTIVES[augmentId];
   if (!player || !def || !player.augmentIds.includes(augmentId)) return 'BLOCKED';
   if (player.reserved?.augmentId === augmentId) return 'RESERVED';
-  if ((player.augmentUses[augmentId] ?? 0) >= def.limit) return 'SPENT';
+  if ((player.augmentUses[augmentId] ?? 0) >= usageLimit(augmentId)) return 'SPENT';
   if (state.phase === 'FINISHED' || state.phase === 'AUGMENT_PICK') return 'BLOCKED';
   return blockReason(state, player, augmentId) ? 'BLOCKED' : 'READY';
 }
@@ -1083,15 +1029,4 @@ export function useAugment(
   return def.reserve ? logged : retireIfSpent(logged, playerId, augmentId);
 }
 
-/** An active with no uses left leaves the hand (its slot frees up) and is kept in `retired`. */
-export function retireIfSpent(state: GameState, playerId: PlayerId, augmentId: string): GameState {
-  const player = state.players.find((p) => p.id === playerId);
-  const limit = ACTIVES[augmentId]?.limit;
-  if (!player || limit === undefined || !player.augmentIds.includes(augmentId)) return state;
-  if ((player.augmentUses[augmentId] ?? 0) < limit || player.reserved?.augmentId === augmentId) return state;
-  return updatePlayer(state, playerId, (p) => ({
-    ...p,
-    augmentIds: p.augmentIds.filter((id) => id !== augmentId),
-    retired: p.retired.includes(augmentId) ? p.retired : [...p.retired, augmentId],
-  }));
-}
+export { retireIfSpent };

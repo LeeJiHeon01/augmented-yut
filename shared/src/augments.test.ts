@@ -164,9 +164,14 @@ describe('move passives', () => {
     expect(stateOf(movePiece(s, 'a', { pieceId: 'a-0', result: 'GAE' }), 'a-0')).toEqual(at(20, 5));
   });
 
-  it('O-P7: other players keep to the outer path', () => {
-    const s = game({ aug: { b: ['O-P7'] }, place: { 'a-0': at(5, 4) }, pending: ['DO'] });
-    expect(stateOf(movePiece(s, 'a', { pieceId: 'a-0', result: 'DO' }), 'a-0')).toEqual(at(6, 5));
+  it('O-P7 천리마: a Yut or Mo move goes three spaces further, twice', () => {
+    let s = game({ aug: { a: ['O-P7'] }, place: { 'a-0': at(1, 0) }, pending: ['YUT'] });
+    s = movePiece(s, 'a', { pieceId: 'a-0', result: 'YUT' });
+    expect(stateOf(s, 'a-0')).toEqual(at(8, 7));
+    expect(player(s, 'a').augmentUses['O-P7']).toBe(1);
+    const doMove = movePiece({ ...s, turn: 'a', phase: 'MOVE', pendingResults: ['DO'], throwsRemaining: 0 }, 'a', { pieceId: 'a-0', result: 'DO' });
+    expect(stateOf(doMove, 'a-0')).toEqual(at(9, 8));
+    expect(player(doMove, 'a').augmentUses['O-P7']).toBe(1);
   });
 
   it('O-S8: stacking moves the stack one more space', () => {
@@ -188,11 +193,11 @@ describe('move passives', () => {
     expect(stateOf(movePiece(t, 'a', { pieceId: 'a-0', result: 'DO' }), 'a-0')).toEqual(at(9, 8));
   });
 
-  it('A-S9: the first shortcut entry adds a space, once', () => {
+  it('A-S9: a shortcut entry adds a space and uses one charge', () => {
     const s = game({ aug: { a: ['A-S9'] }, place: { 'a-0': at(5, 4) }, pending: ['DO'] });
     const t = movePiece(s, 'a', { pieceId: 'a-0', result: 'DO' });
     expect(stateOf(t, 'a-0')).toEqual(at(21, 20));
-    expect(player(t, 'a').status.spent).toContain('A-S9');
+    expect(player(t, 'a').augmentUses['A-S9']).toBe(1);
   });
 
   it('A-S15: one space short of home still finishes, once per piece', () => {
@@ -305,7 +310,8 @@ describe('capture passives', () => {
     expect(stateOf(capture({ b: ['C-S14'] }, {}, seq(0.1)), 'b-0')).toEqual(at(4, 3));
     const miss = capture({ b: ['C-S14'] }, {}, seq(0.9));
     expect(stateOf(miss, 'b-0')).toEqual(WAIT);
-    expect(player(miss, 'b').status.spent).toContain('C-S14');
+    // One try, hit or miss: used up either way.
+    expect(player(miss, 'b').retired).toEqual(['C-S14']);
   });
 
   it('A-S2: 25% dodge', () => {
@@ -316,7 +322,7 @@ describe('capture passives', () => {
   it('A-P3: each piece survives its first capture', () => {
     const t = capture({ b: ['A-P3'] });
     expect(stateOf(t, 'b-0')).toEqual(at(4, 3));
-    expect(t.field.pieceSpent).toContain('A-P3:b-0');
+    expect(player(t, 'b').retired).toEqual(['A-P3']);
   });
 
   it('A-S5 / O-G2: only one piece of a stack goes home', () => {

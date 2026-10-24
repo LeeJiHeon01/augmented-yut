@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   activeSpec,
   allied,
@@ -7,7 +7,7 @@ import {
   CHAOS_EVERY_ROUNDS,
   chaosEventById,
   completedRound,
-  isImplemented,
+  isActive,
   moverOf,
   movesFor,
   planMove,
@@ -35,6 +35,7 @@ import { KIND_LABEL, TIER_META } from '../augmentMeta';
 import { COLOR_META } from '../colors';
 import { chipLabel, entryLine, formatClock, RESULT_LABEL, stepsText } from '../format';
 import { Board, type BoardMarks, type Preview } from '../game/Board';
+import { YutThrow } from '../game/YutThrow';
 import { useGame } from '../store';
 import { Frame } from '../ui/Frame';
 import { AugmentSlots, Emblem, GoldButton, Pill } from '../ui/parts';
@@ -42,10 +43,12 @@ import { useServerNow } from '../ui/useNow';
 import { AugmentPick } from './AugmentPick';
 import { nextStep, pickableNodes, pickablePieces, stepHint, type Targeting } from './targeting';
 
-export const GAME_HEIGHT = 1160;
+export const GAME_HEIGHT = 1280;
 
 /** How long the "just moved" ring and the timeout banner stay up. */
 const NOTICE_MS = 2500;
+/** How long the throw animation stays up, counted from when this browser received the throw. */
+const THROW_SHOW_MS = 2200;
 /** How long the chaos entrance stays up; input waits meanwhile. */
 const CHAOS_NOTICE_MS = 3500;
 const AUGMENT_SLOTS = 6;
@@ -61,10 +64,10 @@ const RESULT_BY_STEPS: Record<number, YutResult> = { 1: 'DO', 2: 'GAE', 3: 'GEOL
 
 /** Panel slots in seat order: top-left, top-right, bottom-left, bottom-right. */
 const PANEL_POSITIONS = [
-  { left: 48, top: 192 },
-  { left: 1094, top: 192 },
-  { left: 48, top: 642 },
-  { left: 1094, top: 642 },
+  { left: 48, top: 238 },
+  { left: 1102, top: 238 },
+  { left: 48, top: 688 },
+  { left: 1102, top: 688 },
 ];
 
 export function GameScreen({ room, game }: { room: RoomView; game: GameState }) {
@@ -81,6 +84,19 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
   const last = game.log[lastIndex];
   const lastAge = room.logTimes[lastIndex] ? now - room.logTimes[lastIndex] : Infinity;
   const autoNotice = last?.auto === true && lastAge < NOTICE_MS;
+
+  // The latest throw plays its animation once, timed by the local clock (server clocks drift).
+  // Throws already in the log when the screen opens (reload, rejoin) do not play.
+  const throwIndex = game.log.map((e) => e.kind).lastIndexOf('THROW');
+  const throwEntry = game.log[throwIndex];
+  const seenThrow = useRef<{ index: number; at: number }>({ index: throwIndex, at: 0 });
+  // A new game in the same room starts the log over.
+  if (throwIndex < seenThrow.current.index) seenThrow.current = { index: -1, at: 0 };
+  if (throwIndex > seenThrow.current.index) seenThrow.current = { index: throwIndex, at: Date.now() };
+  const throwShown =
+    throwEntry?.kind === 'THROW' && seenThrow.current.index === throwIndex && Date.now() - seenThrow.current.at < THROW_SHOW_MS
+      ? throwEntry
+      : null;
 
   const chaosIndex = game.log.map((e) => e.kind).lastIndexOf('CHAOS');
   const chaosEntry = game.log[chaosIndex];
@@ -205,7 +221,7 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
     <Frame section="친구 대전" roomCode={room.code} height={GAME_HEIGHT}>
       <TurnTimer seconds={secondsLeft} auto={autoNotice} />
 
-      <div className="absolute top-[167px] left-[408px] z-10 flex h-[36px] w-[624px] items-center justify-center gap-[14px]">
+      <div className="absolute top-[180px] left-[408px] z-10 flex h-[36px] w-[624px] items-center justify-center gap-[14px]">
         <div className="h-px w-[70px] bg-bronze" />
         <img alt="" src={sun} className="size-[21px]" />
         <p className="font-serif text-[24px] font-semibold text-gold-light">
@@ -299,7 +315,7 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
       <ChaosPanel round={completedRound(game)} lastEventId={game.lastChaos} active={game.field.chaosActive} />
       <GameLog room={room} game={game} />
 
-      <div className="absolute top-[853px] left-[48px] flex h-[110px] w-[1344px] items-center justify-between rounded-[14px] border border-line bg-panel px-[24px]">
+      <div className="absolute top-[930px] left-[48px] flex h-[116px] w-[1344px] items-center justify-between rounded-[14px] border border-line bg-panel px-[32px]">
         <ResultBar
           count={game.pendingResults.length}
           options={options}
@@ -354,6 +370,7 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
         />
       )}
 
+      {throwShown && !chaosShown && <YutThrow key={throwIndex} result={throwShown.result} />}
       {chaosShown && <ChaosEntrance eventId={chaosShown.eventId} round={chaosShown.round} />}
     </Frame>
   );
@@ -411,7 +428,7 @@ function MyAugments({ game, me, locked, picking, onUse }: MyAugmentsProps) {
   const player = game.players.find((p) => p.id === me);
   const augmentIds = player?.augmentIds ?? [];
   return (
-    <div className="absolute top-[984px] left-[48px] flex gap-[14px]">
+    <div className="absolute top-[1072px] left-[48px] flex gap-[20px]">
       {Array.from({ length: AUGMENT_SLOTS }, (_, i) => {
         const augment = augmentById(augmentIds[i] ?? '');
         if (!augment || !player) {
@@ -419,7 +436,7 @@ function MyAugments({ game, me, locked, picking, onUse }: MyAugmentsProps) {
             <div
               key={i}
               aria-disabled="true"
-              className="flex h-[137px] w-[212px] flex-col justify-between rounded-[8px] border border-line-soft bg-panel-soft p-[12px] opacity-60"
+              className="flex h-[142px] w-[207px] flex-col justify-between rounded-[10px] border border-line-soft bg-panel-soft p-[16px] opacity-60"
             >
               <div className="flex items-center gap-[10px]">
                 <AugmentSlots size={32} count={1} />
@@ -432,7 +449,7 @@ function MyAugments({ game, me, locked, picking, onUse }: MyAugmentsProps) {
         }
         const tier = TIER_META[augment.rarity];
         const left = usesLeft(player, augment.id);
-        const status = left === null ? null : activeStatus(game, player.id, augment.id);
+        const status = isActive(augment.id) ? activeStatus(game, player.id, augment.id) : null;
         const ready = status === 'READY' && !locked && picking === null;
         const pill = status ? ACTIVE_PILL[status] : null;
         return (
@@ -442,7 +459,7 @@ function MyAugments({ game, me, locked, picking, onUse }: MyAugmentsProps) {
             disabled={!ready}
             onClick={() => onUse(augment.id)}
             title={ready ? '클릭하면 사용해요' : undefined}
-            className={`flex h-[137px] w-[212px] flex-col justify-between rounded-[8px] border bg-panel p-[12px] text-left transition enabled:cursor-pointer enabled:hover:-translate-y-[3px] ${
+            className={`flex h-[142px] w-[207px] flex-col justify-between rounded-[10px] border bg-panel p-[16px] text-left transition enabled:cursor-pointer enabled:hover:-translate-y-[3px] ${
               status === 'SPENT' ? 'opacity-60' : ''
             }`}
             style={{
@@ -471,8 +488,7 @@ function MyAugments({ game, me, locked, picking, onUse }: MyAugmentsProps) {
                 className="self-start rounded-full border px-[10px] py-[3px] text-[11px]"
                 style={{ borderColor: `${tier.color}66`, color: tier.color }}
               >
-                {KIND_LABEL[augment.kind]}
-                {isImplemented(augment.id) ? '' : ' · 효과 준비 중'}
+                {KIND_LABEL[augment.kind]} · {left}회 남음
               </span>
             )}
           </button>
@@ -513,7 +529,7 @@ function Notice({ game, nameOf }: { game: GameState; nameOf: (id: string) => str
   if (!last) return null;
   const total = 'playerId' in last ? (finishedSoFar.get(last.playerId) ?? 0) : 0;
   return (
-    <div className="absolute top-[803px] left-[415px] flex h-[38px] w-[609px] items-center rounded-[8px] border border-green bg-[rgba(116,199,174,0.1)] px-[15px]">
+    <div className="absolute top-[866px] left-[418px] flex h-[40px] w-[604px] items-center rounded-[8px] border border-green bg-[rgba(116,199,174,0.1)] px-[15px]">
       <p className="truncate text-[14px] font-bold text-[#a8e6d2]">
         {entryLine(last, total, nameOf)}
       </p>
@@ -523,7 +539,7 @@ function Notice({ game, nameOf }: { game: GameState; nameOf: (id: string) => str
 
 function TimeoutBanner({ name }: { name: string }) {
   return (
-    <div className="absolute top-[743px] left-[415px] z-30 flex h-[85px] w-[609px] items-center gap-[18px] rounded-[8px] border border-[#d87b73] bg-[rgba(62,30,40,0.95)] px-[24px]">
+    <div className="absolute top-[806px] left-[418px] z-30 flex h-[85px] w-[604px] items-center gap-[18px] rounded-[8px] border border-[#d87b73] bg-[rgba(62,30,40,0.95)] px-[24px]">
       <img alt="" src={hourglass} className="size-[30px]" />
       <div className="flex flex-col gap-[4px]">
         <p className="text-[22px] font-bold text-[#f29b92]">시간 초과로 자동 진행</p>
@@ -548,7 +564,7 @@ function ChaosPanel({ round, lastEventId, active }: ChaosPanelProps) {
   const event = running ? chaosEventById(running.eventId) : undefined;
   const lastEvent = lastEventId ? chaosEventById(lastEventId) : undefined;
   return (
-    <div className="absolute top-[409px] left-[48px] flex h-[208px] w-[298px] flex-col items-start gap-[14px] rounded-[14px] border border-line-soft bg-panel-soft p-[24px]">
+    <div className="absolute top-[452px] left-[48px] flex h-[208px] w-[290px] flex-col items-start gap-[14px] rounded-[14px] border border-line-soft bg-panel-soft p-[24px]">
       {running && event ? (
         <>
           <span className="flex items-center gap-[8px] rounded-full border border-bronze bg-[rgba(8,15,32,0.4)] px-[12px] py-[5px] text-[12px] font-bold text-gold">
@@ -584,7 +600,7 @@ function ChaosEntrance({ eventId, round }: { eventId: string; round: number }) {
   const event = chaosEventById(eventId);
   const icon = CHAOS_ICON[eventId] ?? sparkles;
   return (
-    <div className="absolute top-[293px] left-[351px] z-50 h-[407px] w-[738px] rounded-[16px] border-2 border-gold bg-[#111d30] p-[10px] shadow-[0_0_60px_rgba(217,184,120,0.35)]">
+    <div className="absolute top-[333px] left-[351px] z-50 h-[407px] w-[738px] rounded-[16px] border-2 border-gold bg-[#111d30] p-[10px] shadow-[0_0_60px_rgba(217,184,120,0.35)]">
       <div className="flex h-full flex-col items-center rounded-[10px] border border-line pt-[28px]">
         <div className="flex items-center gap-[12px]">
           <div className="h-px w-[52px] bg-bronze" />
@@ -622,15 +638,17 @@ function PlayerPanel({ player, seat, game, isMe, position }: PlayerPanelProps) {
   const remaining = own.length - finished;
   const active = game.turn === player.id;
   const ally = game.players.find((p) => allied(game, player.id, p.id));
+  // A dropped player is dimmed piece by piece, so the hover card stays fully visible.
+  const dim = seat.connected ? '' : 'opacity-60';
 
   return (
     <div
-      className={`absolute flex h-[186px] w-[298px] flex-col gap-[12px] rounded-[14px] bg-panel p-[18px] ${
+      className={`absolute flex h-[186px] w-[290px] flex-col gap-[12px] rounded-[14px] bg-panel px-[20px] py-[18px] hover:z-40 ${
         active ? 'border-[1.5px] border-gold shadow-[0_0_24px_rgba(221,182,108,0.21)]' : 'border border-line shadow-[0_16px_40px_rgba(0,0,0,0.25)]'
-      } ${seat.connected ? '' : 'opacity-60'}`}
+      }`}
       style={position}
     >
-      <div className="flex items-center gap-[12px]">
+      <div className={`flex items-center gap-[12px] ${dim}`}>
         <Emblem color={seat.color} size={46} />
         <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
           <p className="truncate text-[16px] font-bold text-ink">
@@ -644,7 +662,7 @@ function PlayerPanel({ player, seat, game, isMe, position }: PlayerPanelProps) {
         </div>
         {active && <Pill>{isMe ? '내 턴' : '차례'}</Pill>}
       </div>
-      <div className="flex items-center justify-between">
+      <div className={`flex items-center justify-between ${dim}`}>
         <div className="flex gap-[5px]">
           {own.map((p) => (
             <span
@@ -656,7 +674,7 @@ function PlayerPanel({ player, seat, game, isMe, position }: PlayerPanelProps) {
         </div>
         <p className="text-[12px] whitespace-pre text-mist">{`남은 말 ${remaining}  ·  골인 ${finished}`}</p>
       </div>
-      <div className="flex gap-[9px]">
+      <div className="flex gap-[8px]">
         {Array.from({ length: AUGMENT_SLOTS }, (_, i) => {
           const augment = augmentById(player.augmentIds[i] ?? '');
           if (!augment) return <AugmentSlots key={i} size={33} count={1} />;
@@ -668,20 +686,20 @@ function PlayerPanel({ player, seat, game, isMe, position }: PlayerPanelProps) {
               className="group relative flex size-[33px] shrink-0 cursor-help items-center justify-center rounded-[8px] border bg-slot"
               style={{ borderColor: tier.border }}
             >
-              <span className="text-[13px] font-bold" style={{ color: tier.color }}>
+              <span className={`text-[13px] font-bold ${dim}`} style={{ color: tier.color }}>
                 {augment.name.slice(0, 1)}
               </span>
-              {/* Hover card: right-side slots open to the left so the card stays on screen. */}
+              {/* Hover card opens toward the screen centre so it never leaves the stage. */}
               <div
-                className={`pointer-events-none absolute top-[40px] z-50 hidden w-[250px] flex-col gap-[6px] rounded-[10px] border bg-[rgba(17,29,48,0.98)] p-[12px] shadow-[0_12px_32px_rgba(0,0,0,0.45)] group-hover:flex ${
-                  i >= 3 ? 'right-0' : 'left-0'
+                className={`pointer-events-none absolute top-[40px] z-50 hidden w-[250px] flex-col gap-[6px] rounded-[10px] border bg-[#111d30] p-[12px] shadow-[0_12px_32px_rgba(0,0,0,0.45)] group-hover:flex ${
+                  position.left > 700 ? 'right-0' : 'left-0'
                 }`}
                 style={{ borderColor: tier.border }}
               >
                 <p className="text-[14px] font-bold text-ink">{augment.name}</p>
                 <p className="text-[11px]" style={{ color: tier.color }}>
                   {tier.label} · {KIND_LABEL[augment.kind]}
-                  {left !== null ? ` · 남은 ${left}회` : ''}
+                  {` · 남은 ${left}회`}
                 </p>
                 <p className="text-[12px] leading-[18px] text-mist">{augment.description}</p>
               </div>
@@ -706,10 +724,10 @@ function GameLog({ room, game }: { room: RoomView; game: GameState }) {
     const time = room.startedAt && room.logTimes[i] ? room.logTimes[i] - room.startedAt : 0;
     return [{ i, entry, total, time }];
   });
-  const latest = lines.slice(-6).reverse();
+  const latest = lines.slice(-5).reverse();
 
   return (
-    <div className="absolute top-[409px] left-[1094px] flex h-[216px] w-[298px] flex-col gap-[9px] overflow-hidden rounded-[14px] border border-line-soft bg-panel-soft p-[18px]">
+    <div className="absolute top-[452px] left-[1102px] flex h-[208px] w-[290px] flex-col gap-[11px] overflow-hidden rounded-[14px] border border-line-soft bg-panel-soft p-[20px]">
       <div className="flex justify-between">
         <p className="text-[13px] font-bold text-mist">대전 기록</p>
         <img alt="" src={list} className="size-[15px]" />
@@ -753,37 +771,39 @@ interface ResultBarProps {
 /** Results as chips (alternatives as "빽도→도"), split buttons, and a one-line status. */
 function ResultBar({ count, options, selected, active, dimmed, usable, onPick, splits, onSplit, status }: ResultBarProps) {
   return (
-    <div className={`flex flex-col gap-[8px] ${dimmed ? 'opacity-50' : ''}`}>
+    <div className={`flex flex-col gap-[6px] ${dimmed ? 'opacity-50' : ''}`}>
       <p className="text-[11px] text-dim">누적 결과 · {count}개 남음</p>
-      <div className="flex h-[25px] gap-[8px]">
+      <div className="flex h-[40px] items-center gap-[10px]">
         {options.map((o) => {
           const on = active && sameChoice(selected, o);
+          // Waiting for a pick: unpicked usable chips pulse so the next step is obvious.
+          const waiting = active && !selected && usable(o);
           return (
             <button
               key={`${o.result}-${o.as ?? ''}`}
               type="button"
               disabled={!active || !usable(o)}
               onClick={() => onPick(o)}
-              className={`rounded-full border px-[10px] text-[12px] font-bold whitespace-nowrap transition enabled:cursor-pointer ${
-                on ? 'border-gold-light bg-gold-light text-button-ink' : 'border-bronze bg-[rgba(217,184,120,0.08)] text-gold-light'
-              } ${active && !usable(o) ? 'opacity-40' : ''}`}
+              className={`h-[40px] rounded-full border-2 px-[18px] text-[18px] font-bold whitespace-nowrap transition enabled:cursor-pointer enabled:hover:scale-105 ${
+                on ? 'border-gold-light bg-gold-light text-button-ink' : 'border-bronze bg-[rgba(217,184,120,0.1)] text-gold-light'
+              } ${waiting ? 'animate-pulse' : ''} ${active && !usable(o) ? 'opacity-40' : ''}`}
             >
               {o.as ? `${RESULT_LABEL[o.result]}→${chipLabel(o.as)}` : chipLabel(o.result)}
             </button>
           );
         })}
-        {splits.length > 0 && <span className="ml-[6px] text-[11px] leading-[25px] text-dim">나누기</span>}
+        {splits.length > 0 && <span className="ml-[6px] text-[13px] text-dim">나누기</span>}
         {splits.map(({ first, second }) => (
           <button
             key={`split-${first}`}
             type="button"
             onClick={() => onSplit(first)}
-            className="cursor-pointer rounded-full border border-[#c7a4f5] px-[10px] text-[12px] font-bold text-[#c7a4f5] hover:bg-[rgba(199,164,245,0.12)]"
+            className="h-[36px] cursor-pointer rounded-full border-2 border-[#c7a4f5] px-[14px] text-[15px] font-bold text-[#c7a4f5] hover:bg-[rgba(199,164,245,0.12)]"
           >
             {RESULT_LABEL[first]}+{RESULT_LABEL[second]}
           </button>
         ))}
-        {options.length === 0 && <span className="text-[12px] leading-[25px] text-dim">윷을 던지면 결과가 쌓여요</span>}
+        {options.length === 0 && <span className="text-[14px] text-dim">윷을 던지면 결과가 쌓여요</span>}
       </div>
       <p className="text-[18px] font-bold text-ink">{status}</p>
     </div>
@@ -805,7 +825,7 @@ function TargetPanel({ title, hint, onCancel, children }: TargetPanelProps) {
   const hasChoices = Array.isArray(children) ? children.some(Boolean) : Boolean(children);
   if (hasChoices) {
     return (
-      <div className="absolute top-[175px] left-[395px] z-40 flex size-[650px] items-center justify-center rounded-[30px] bg-[rgba(3,8,22,0.55)]">
+      <div className="absolute top-[215px] left-[395px] z-40 flex size-[650px] items-center justify-center rounded-[30px] bg-[rgba(3,8,22,0.55)]">
         <div className="flex w-[520px] flex-col items-center gap-[20px] rounded-[16px] border-2 border-gold bg-[rgba(17,29,48,0.98)] px-[28px] py-[26px] shadow-[0_0_40px_rgba(217,184,120,0.3)]">
           <p className="font-serif text-[26px] font-semibold text-gold-light">{title}</p>
           <p className="text-[15px] text-mist">{hint}</p>
@@ -820,7 +840,7 @@ function TargetPanel({ title, hint, onCancel, children }: TargetPanelProps) {
     );
   }
   return (
-    <div className="absolute top-[799px] left-[395px] z-30 flex h-[46px] w-[650px] items-center gap-[10px] rounded-[8px] border border-gold bg-[rgba(17,29,48,0.97)] px-[14px] shadow-[0_0_24px_rgba(217,184,120,0.25)]">
+    <div className="absolute top-[862px] left-[395px] z-30 flex h-[48px] w-[650px] items-center gap-[10px] rounded-[8px] border border-gold bg-[rgba(17,29,48,0.97)] px-[14px] shadow-[0_0_24px_rgba(217,184,120,0.25)]">
       <p className="shrink-0 text-[14px] font-bold text-gold-light">{title}</p>
       <p className="shrink-0 text-[12px] text-mist">{hint}</p>
       <div className="flex flex-1 justify-end gap-[6px]">{children}</div>

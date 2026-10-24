@@ -42,7 +42,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 });
 
 const hub = createHub({
-  turnMs: 18_000,
+  turnMs: 60_000,
   pickMs: 60_000,
   awayTurnMs: 2_000,
   graceMs: 30_000,

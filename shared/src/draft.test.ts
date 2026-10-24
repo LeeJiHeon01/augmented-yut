@@ -201,13 +201,13 @@ describe('a full hand of six', () => {
     expect(() => pickAugment(s, 'a', card, 'NOPE')).toThrow('가지고 있지 않은');
   });
 
-  it('swaps one augment and drops its uses', () => {
+  it('swaps one augment; the swapped one keeps its use count for this game', () => {
     const s = opened();
     const card = offerOf(s, 'a').cards[0]!;
     const done = autoPick(pickAugment(s, 'a', card, full[0]!), seq(0.1));
     const a = done.players.find((p) => p.id === 'a')!;
     expect(a.augmentIds).toEqual([...full.slice(1), card]);
-    expect(a.augmentUses[full[0]!]).toBeUndefined();
+    expect(a.augmentUses[full[0]!]).toBe(1);
     expect(done.log.find((e) => e.kind === 'AUGMENT' && e.playerId === 'a')).toMatchObject({ augmentId: card, replaced: full[0] });
   });
 

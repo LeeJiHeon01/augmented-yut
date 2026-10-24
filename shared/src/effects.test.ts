@@ -124,7 +124,7 @@ describe('O-S2 출발 대시', () => {
 });
 
 describe('O-S13 고정 투척', () => {
-  it('reserves Geol for the next throw, once per game', () => {
+  it('reserves Geol for the next throw, twice per game', () => {
     const s = useAugment(withAugments({ a: ['O-S13'] }), 'a', 'O-S13');
     expect(activeStatus(s, 'a', 'O-S13')).toBe('RESERVED');
     expect(s.log.at(-1)).toMatchObject({ kind: 'USE', playerId: 'a', augmentId: 'O-S13' });
@@ -132,10 +132,13 @@ describe('O-S13 고정 투척', () => {
     expect(thrown.pendingResults).toEqual(['GEOL']);
     expect(thrown.log.at(-1)).toMatchObject({ kind: 'THROW', result: 'GEOL', augmentId: 'O-S13' });
     expect(playerOf(thrown, 'a').reserved).toBeNull();
-    // Used up: out of the hand, kept as retired.
-    expect(playerOf(thrown, 'a').augmentIds).toEqual([]);
-    expect(playerOf(thrown, 'a').retired).toEqual(['O-S13']);
-    expect(() => useAugment(thrown, 'a', 'O-S13')).toThrow('가지고 있지 않은');
+    expect(playerOf(thrown, 'a').augmentIds).toEqual(['O-S13']);
+    // The second use leaves the hand once the reserved throw is made.
+    const again = { ...thrown, phase: 'THROW' as const, throwsRemaining: 1 };
+    const second = throwYut(useAugment(again, 'a', 'O-S13'), 'a', seq(...STICKS.BACKDO));
+    expect(playerOf(second, 'a').augmentIds).toEqual([]);
+    expect(playerOf(second, 'a').retired).toEqual(['O-S13']);
+    expect(() => useAugment(second, 'a', 'O-S13')).toThrow('가지고 있지 않은');
   });
 
   it('works on a timeout throw too', () => {

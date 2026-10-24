@@ -12,3 +12,4 @@ export * from './effects';
 export * from './chaos';
 export * from './play';
 export * from './actives';
+export * from './usage';
