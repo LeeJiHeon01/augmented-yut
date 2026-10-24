@@ -23,7 +23,8 @@ function playRound(s: GameState): GameState {
 function pickAll(s: GameState): GameState {
   return s.players.reduce((acc, p) => {
     const card = acc.draft!.offers[p.id]!.cards[0]!;
-    return pickAugment(acc, p.id, card, p.augmentIds.length >= MAX_AUGMENTS ? p.augmentIds[0]! : null);
+    // A fixed roll keeps any chaos event after the draft from putting pieces on the board.
+    return pickAugment(acc, p.id, card, p.augmentIds.length >= MAX_AUGMENTS ? p.augmentIds[0]! : null, () => 0);
   }, s);
 }
 
@@ -42,16 +43,23 @@ describe('a draft after every round', () => {
     expect(s.players.every((p) => new Set(p.augmentIds).size === MAX_AUGMENTS)).toBe(true);
   });
 
-  it('on round four the chaos event comes first, then the draft opens', () => {
+  it('on round four the draft comes first, the chaos event once everyone has picked', () => {
     let s = pickAll(openDraft(startGame('r', PLAYERS), seq(0.3)));
     for (let round = 1; round <= 3; round++) s = pickAll(playRound(s));
     s = playRound(s);
-    expect([s.chaosDone, s.phase, s.draft?.index]).toEqual([1, 'AUGMENT_PICK', 4]);
+    expect([s.chaosDone, s.phase, s.draft?.index, s.field.chaosPending]).toEqual([0, 'AUGMENT_PICK', 4, true]);
+    s = pickAll(s);
+    expect([s.chaosDone, s.phase, s.field.chaosPending]).toEqual([1, 'THROW', false]);
     const kinds = s.log.map((e) => e.kind);
     expect(kinds.at(-1)).toBe('CHAOS');
-    s = pickAll(s);
-    expect(s.log.slice(-3).every((e) => e.kind === 'AUGMENT')).toBe(true);
-    expect(s.log.map((e) => e.kind).lastIndexOf('CHAOS')).toBeLessThan(s.log.map((e) => e.kind).lastIndexOf('AUGMENT'));
+    expect(kinds.lastIndexOf('AUGMENT')).toBeLessThan(kinds.lastIndexOf('CHAOS'));
+  });
+
+  it('a timed-out draft also runs the pending chaos event', () => {
+    let s = pickAll(openDraft(startGame('r', PLAYERS), seq(0.3)));
+    for (let round = 1; round <= 3; round++) s = pickAll(playRound(s));
+    s = autoPick(playRound(s), seq(0.1));
+    expect([s.chaosDone, s.phase]).toEqual([1, 'THROW']);
   });
 
   it('a lasting chaos event keeps running through the draft that follows it', () => {

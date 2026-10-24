@@ -117,7 +117,7 @@ function RankCard({ rank, player, seat, game, isMe }: RankCardProps) {
           <p className="text-dim">함께한 증강</p>
           <p className="text-mist">잡기 {player.captures}회</p>
         </div>
-        <HeldAugments augmentIds={player.augmentIds} />
+        <HeldAugments augmentIds={[...player.augmentIds, ...player.retired]} />
       </div>
     </div>
   );

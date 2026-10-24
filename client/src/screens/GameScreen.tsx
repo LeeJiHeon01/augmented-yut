@@ -661,16 +661,30 @@ function PlayerPanel({ player, seat, game, isMe, position }: PlayerPanelProps) {
           const augment = augmentById(player.augmentIds[i] ?? '');
           if (!augment) return <AugmentSlots key={i} size={33} count={1} />;
           const tier = TIER_META[augment.rarity];
+          const left = usesLeft(player, augment.id);
           return (
             <div
               key={i}
-              title={`${augment.name} · ${augment.description}`}
-              className="flex size-[33px] shrink-0 items-center justify-center rounded-[8px] border bg-slot"
+              className="group relative flex size-[33px] shrink-0 cursor-help items-center justify-center rounded-[8px] border bg-slot"
               style={{ borderColor: tier.border }}
             >
               <span className="text-[13px] font-bold" style={{ color: tier.color }}>
                 {augment.name.slice(0, 1)}
               </span>
+              {/* Hover card: right-side slots open to the left so the card stays on screen. */}
+              <div
+                className={`pointer-events-none absolute top-[40px] z-50 hidden w-[250px] flex-col gap-[6px] rounded-[10px] border bg-[rgba(17,29,48,0.98)] p-[12px] shadow-[0_12px_32px_rgba(0,0,0,0.45)] group-hover:flex ${
+                  i >= 3 ? 'right-0' : 'left-0'
+                }`}
+                style={{ borderColor: tier.border }}
+              >
+                <p className="text-[14px] font-bold text-ink">{augment.name}</p>
+                <p className="text-[11px]" style={{ color: tier.color }}>
+                  {tier.label} · {KIND_LABEL[augment.kind]}
+                  {left !== null ? ` · 남은 ${left}회` : ''}
+                </p>
+                <p className="text-[12px] leading-[18px] text-mist">{augment.description}</p>
+              </div>
             </div>
           );
         })}
@@ -783,8 +797,28 @@ interface TargetPanelProps {
   children?: ReactNode;
 }
 
-/** Picks for an active augment (or the O-P8 choice), shown under the board. */
+/**
+ * Picks for an active augment (or the O-P8 choice). With buttons it is a large dialog over the board;
+ * while pieces or nodes are picked on the board it shrinks to one line under it.
+ */
 function TargetPanel({ title, hint, onCancel, children }: TargetPanelProps) {
+  const hasChoices = Array.isArray(children) ? children.some(Boolean) : Boolean(children);
+  if (hasChoices) {
+    return (
+      <div className="absolute top-[175px] left-[395px] z-40 flex size-[650px] items-center justify-center rounded-[30px] bg-[rgba(3,8,22,0.55)]">
+        <div className="flex w-[520px] flex-col items-center gap-[20px] rounded-[16px] border-2 border-gold bg-[rgba(17,29,48,0.98)] px-[28px] py-[26px] shadow-[0_0_40px_rgba(217,184,120,0.3)]">
+          <p className="font-serif text-[26px] font-semibold text-gold-light">{title}</p>
+          <p className="text-[15px] text-mist">{hint}</p>
+          <div className="flex flex-wrap justify-center gap-[12px]">{children}</div>
+          {onCancel && (
+            <button type="button" onClick={onCancel} className="cursor-pointer text-[13px] text-dim hover:text-ink">
+              취소 (Esc)
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute top-[799px] left-[395px] z-30 flex h-[46px] w-[650px] items-center gap-[10px] rounded-[8px] border border-gold bg-[rgba(17,29,48,0.97)] px-[14px] shadow-[0_0_24px_rgba(217,184,120,0.25)]">
       <p className="shrink-0 text-[14px] font-bold text-gold-light">{title}</p>
@@ -804,7 +838,7 @@ function ChoiceButton({ onClick, children }: { onClick: () => void; children: Re
     <button
       type="button"
       onClick={onClick}
-      className="cursor-pointer rounded-[6px] border border-bronze bg-[rgba(217,184,120,0.08)] px-[10px] py-[4px] text-[12px] font-bold whitespace-nowrap text-gold-light hover:bg-[rgba(217,184,120,0.2)]"
+      className="min-w-[96px] cursor-pointer rounded-[10px] border-2 border-bronze bg-[rgba(217,184,120,0.08)] px-[20px] py-[12px] text-[18px] font-bold whitespace-nowrap text-gold-light hover:bg-[rgba(217,184,120,0.22)]"
     >
       {children}
     </button>

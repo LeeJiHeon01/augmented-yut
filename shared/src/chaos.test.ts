@@ -117,9 +117,9 @@ describe('chaos schedule', () => {
     return PLAYERS.reduce((state, p) => throwYut(state, p.id, seq(0.1, 0.9, 0.9, 0.9)), s);
   }
   const pickAll = (s: GameState) =>
-    s.players.reduce((acc, p) => pickAugment(acc, p.id, acc.draft!.offers[p.id]!.cards[0]!), s);
+    s.players.reduce((acc, p) => pickAugment(acc, p.id, acc.draft!.offers[p.id]!.cards[0]!, null, () => 0), s);
 
-  it('fires after every fourth full round, before that round’s augment draft', () => {
+  it('fires after every fourth full round, after that round’s augment draft', () => {
     let s = pickAll(openDraft(startGame('r', PLAYERS), seq(0.1)));
     for (let round = 1; round <= 3; round++) {
       s = playRound(s);
@@ -127,10 +127,10 @@ describe('chaos schedule', () => {
     }
     expect(s.chaosDone).toBe(0);
     s = playRound(s);
+    expect([s.chaosDone, s.phase]).toEqual([0, 'AUGMENT_PICK']);
+    s = pickAll(s);
     expect(s.chaosDone).toBe(1);
-    expect(s.phase).toBe('AUGMENT_PICK');
-    const kinds = s.log.map((e) => e.kind);
-    expect(kinds.lastIndexOf('CHAOS')).toBeGreaterThan(kinds.lastIndexOf('THROW'));
+    expect(s.log.at(-1)?.kind).toBe('CHAOS');
   });
 
   it('avoids repeating the previous event', () => {
@@ -148,7 +148,9 @@ describe('chaos schedule', () => {
     const after = autoAct(s, seq(0.1, 0.9, 0.9, 0.9));
     const throwEntry = after.log.filter((e) => e.kind === 'THROW').at(-1);
     expect(throwEntry?.auto).toBe(true);
-    expect(after.log.at(-1)).toMatchObject({ kind: 'CHAOS', auto: false });
+    // The draft opens first; its timeout then runs the chaos event, not marked as auto.
+    const picked = autoAct(after, seq(0.1));
+    expect(picked.log.at(-1)).toMatchObject({ kind: 'CHAOS', auto: false });
   });
 });
 

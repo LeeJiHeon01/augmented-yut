@@ -1,4 +1,5 @@
 import { AUGMENTS, MIN_PLAYERS_FOR, type AugmentDefinition, type AugmentRarity } from './augment';
+import { runChaos } from './chaos';
 import { RuleError, type DraftOffer, type GameState, type PlayerId } from './game';
 
 /** One draft at game start, then one after every full round. */
@@ -129,22 +130,28 @@ export function rerollAugment(state: GameState, playerId: PlayerId, slot: number
 }
 
 /** Pick a candidate. With a full hand, `replace` names the augment to give up. */
-export function pickAugment(state: GameState, playerId: PlayerId, augmentId: string, replace: string | null = null): GameState {
+export function pickAugment(
+  state: GameState,
+  playerId: PlayerId,
+  augmentId: string,
+  replace: string | null = null,
+  random: () => number = Math.random,
+): GameState {
   const offer = offerFor(state, playerId);
   if (!offer.cards.includes(augmentId)) throw new RuleError('후보에 없는 증강이에요');
   const owned = state.players.find((p) => p.id === playerId)?.augmentIds ?? [];
   const full = owned.length >= MAX_AUGMENTS;
   if (full && !replace) throw new RuleError('교체할 증강을 골라 주세요');
   if (full && replace && !owned.includes(replace)) throw new RuleError('가지고 있지 않은 증강이에요');
-  return closeIfDone(withOffer(state, playerId, { ...offer, picked: augmentId, replace: full ? replace : null }));
+  return closeIfDone(withOffer(state, playerId, { ...offer, picked: augmentId, replace: full ? replace : null }), random);
 }
 
 /** Keep a full hand as it is. */
-export function passDraft(state: GameState, playerId: PlayerId): GameState {
+export function passDraft(state: GameState, playerId: PlayerId, random: () => number = Math.random): GameState {
   const offer = offerFor(state, playerId);
   const owned = state.players.find((p) => p.id === playerId)?.augmentIds ?? [];
   if (owned.length < MAX_AUGMENTS) throw new RuleError('증강이 6개가 되기 전에는 넘길 수 없어요');
-  return closeIfDone(withOffer(state, playerId, { ...offer, passed: true }));
+  return closeIfDone(withOffer(state, playerId, { ...offer, passed: true }), random);
 }
 
 /** Timeout: pick at random for everyone who has not chosen yet. */
@@ -162,11 +169,17 @@ export function autoPick(state: GameState, random: () => number): GameState {
     const card = offer.cards[Math.floor(random() * offer.cards.length)] ?? null;
     next = withOffer(next, player.id, { ...offer, picked: card, auto: true });
   }
-  return closeIfDone(next);
+  return closeIfDone(next, random);
 }
 
-/** Once everyone has picked: grant the augments and resume play. */
-function closeIfDone(state: GameState): GameState {
+/** Once everyone has picked: grant the augments, run a chaos event due this round, resume play. */
+function closeIfDone(state: GameState, random: () => number): GameState {
+  const closed = grantPicks(state);
+  if (closed === state || !closed.field.chaosPending) return closed;
+  return runChaos({ ...closed, field: { ...closed.field, chaosPending: false } }, random);
+}
+
+function grantPicks(state: GameState): GameState {
   const { draft } = state;
   if (!draft) return state;
   const offers = state.players.map((p) => ({ id: p.id, offer: draft.offers[p.id] }));

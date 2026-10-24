@@ -132,8 +132,10 @@ describe('O-S13 고정 투척', () => {
     expect(thrown.pendingResults).toEqual(['GEOL']);
     expect(thrown.log.at(-1)).toMatchObject({ kind: 'THROW', result: 'GEOL', augmentId: 'O-S13' });
     expect(playerOf(thrown, 'a').reserved).toBeNull();
-    expect(activeStatus(thrown, 'a', 'O-S13')).toBe('SPENT');
-    expect(() => useAugment(thrown, 'a', 'O-S13')).toThrow('남은 사용 횟수');
+    // Used up: out of the hand, kept as retired.
+    expect(playerOf(thrown, 'a').augmentIds).toEqual([]);
+    expect(playerOf(thrown, 'a').retired).toEqual(['O-S13']);
+    expect(() => useAugment(thrown, 'a', 'O-S13')).toThrow('가지고 있지 않은');
   });
 
   it('works on a timeout throw too', () => {
@@ -160,7 +162,8 @@ describe('A-G12 위험한 도박', () => {
     const again = useAugment(mo, 'a', 'A-G12');
     const backdo = throwYut(again, 'a', seq(0.7));
     expect(backdo.pendingResults).toEqual(['MO', 'BACKDO']);
-    expect(activeStatus(backdo, 'a', 'A-G12')).toBe('SPENT');
+    expect(playerOf(again, 'a').augmentIds).toEqual(['A-G12']);
+    expect(playerOf(backdo, 'a').retired).toEqual(['A-G12']);
   });
 
   it('cannot stack on another reserved throw', () => {
@@ -207,7 +210,8 @@ describe('O-S3 두 번째 기회', () => {
     t = throwYut(useAugment(t, 'a', 'O-S3'), 'a', seq(...STICKS.GAE));
     t = useAugment(t, 'a', 'O-S3');
     t = throwYut(t, 'a', seq(...STICKS.GAE));
-    expect(activeStatus(t, 'a', 'O-S3')).toBe('SPENT');
+    expect(playerOf(t, 'a').retired).toEqual(['O-S3']);
+    expect(playerOf(t, 'a').augmentIds).toEqual([]);
   });
 });
 

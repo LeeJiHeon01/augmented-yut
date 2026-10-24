@@ -108,6 +108,8 @@ export interface FieldState {
   delegate: { owner: PlayerId; by: PlayerId } | null;
   /** Temporary teams (E2, C-G1, C-P2); a new one replaces the old. */
   alliance: Alliance | null;
+  /** A chaos event is due once the augment draft of the same round closes. */
+  chaosPending: boolean;
 }
 
 /**
@@ -133,6 +135,8 @@ export interface Player {
   augmentUses: Record<string, number>;
   /** Active augment reserved for the next throw. */
   reserved: Reservation | null;
+  /** Actives used up and taken out of the hand (shown on the result screen). */
+  retired: string[];
   status: PlayerStatus;
 }
 
@@ -307,6 +311,7 @@ export function newFieldState(pieces: Piece[]): FieldState {
     resume: null,
     delegate: null,
     alliance: null,
+    chaosPending: false,
   };
 }
 

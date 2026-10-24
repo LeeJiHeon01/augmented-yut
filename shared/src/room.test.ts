@@ -30,7 +30,14 @@ describe('validateName', () => {
   it('rejects too short, too long or symbols', () => {
     expect(() => validateName('a')).toThrow('2~10자');
     expect(() => validateName('가나다라마바사아자차카')).toThrow('2~10자');
-    expect(() => validateName('달빛 선비')).toThrow('2~10자');
+    expect(() => validateName('달빛!선비')).toThrow('2~10자');
+  });
+
+  it('allows spaces between words, trimming the ends and squeezing runs', () => {
+    expect(validateName('달빛 선비')).toBe('달빛 선비');
+    expect(validateName('  Moon   Light ')).toBe('Moon Light');
+    expect(() => validateName('가 나 다 라 마 바')).toThrow('2~10자');
+    expect(() => validateName('   ')).toThrow('2~10자');
   });
 });
 

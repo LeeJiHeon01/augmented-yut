@@ -12,6 +12,7 @@ import { RuleError, type GameState, type Piece, type Player, type PlayerId } fro
 import { stackOf } from './moves';
 import {
   ACTIVE_IDS,
+  setRetire,
   extraFor,
   finishPieces,
   landPieces,
@@ -928,6 +929,7 @@ const ACTIVES: Record<string, ActiveDef> = {
 };
 
 for (const id of Object.keys(ACTIVES)) ACTIVE_IDS.add(id);
+setRetire((state, playerId, augmentId) => retireIfSpent(state, playerId, augmentId));
 
 /** C-S7: the latest throw of the player before me. */
 function copiedResult(state: GameState, playerId: PlayerId): YutResult | null {
@@ -1070,11 +1072,26 @@ export function useAugment(
     augmentUses: { ...p.augmentUses, [augmentId]: (p.augmentUses[augmentId] ?? 0) + 1 },
   }));
   const discarded = def === rethrow ? rethrowTarget(state, playerId) : null;
-  return {
+  const logged: GameState = {
     ...next,
     log: [
       ...next.log,
       { kind: 'USE', playerId, augmentId, auto: false, detail, ...(discarded ? { discarded } : {}) },
     ],
   };
+  // A reservation stays in the hand until the reserved throw happens.
+  return def.reserve ? logged : retireIfSpent(logged, playerId, augmentId);
+}
+
+/** An active with no uses left leaves the hand (its slot frees up) and is kept in `retired`. */
+export function retireIfSpent(state: GameState, playerId: PlayerId, augmentId: string): GameState {
+  const player = state.players.find((p) => p.id === playerId);
+  const limit = ACTIVES[augmentId]?.limit;
+  if (!player || limit === undefined || !player.augmentIds.includes(augmentId)) return state;
+  if ((player.augmentUses[augmentId] ?? 0) < limit || player.reserved?.augmentId === augmentId) return state;
+  return updatePlayer(state, playerId, (p) => ({
+    ...p,
+    augmentIds: p.augmentIds.filter((id) => id !== augmentId),
+    retired: p.retired.includes(augmentId) ? p.retired : [...p.retired, augmentId],
+  }));
 }

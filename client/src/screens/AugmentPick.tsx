@@ -116,8 +116,10 @@ export function AugmentPick(props: AugmentPickProps) {
         </div>
 
         {full && !done ? (
-          <div className="mt-[28px] flex w-full items-center gap-[8px]">
-            <p className="mr-[4px] shrink-0 text-[12px] text-mist">{chosen ? '바꿀 증강' : '카드를 먼저 고르세요'}</p>
+          <div className="mt-[22px] flex w-full flex-wrap items-center gap-[10px]">
+            <p className="mr-[4px] w-full text-[15px] font-bold text-gold-light">
+              {chosen ? '바꿀 증강을 고르세요' : '위에서 카드를 먼저 고르세요'}
+            </p>
             {owned.map((id) => {
               const augment = augmentById(id);
               const meta = augment ? TIER_META[augment.rarity] : tier;
@@ -127,7 +129,7 @@ export function AugmentPick(props: AugmentPickProps) {
                   type="button"
                   disabled={!chosen}
                   onClick={() => chosen && onPick(chosen, id)}
-                  className="truncate rounded-[6px] border px-[10px] py-[5px] text-[12px] font-bold transition enabled:cursor-pointer enabled:hover:bg-[rgba(217,184,120,0.12)] disabled:opacity-40"
+                  className="h-[48px] w-[140px] truncate rounded-[10px] border-2 px-[10px] text-[15px] font-bold transition enabled:cursor-pointer enabled:hover:bg-[rgba(217,184,120,0.14)] disabled:opacity-40"
                   style={{ borderColor: meta.border, color: meta.color }}
                 >
                   {augment?.name ?? id}
@@ -137,7 +139,7 @@ export function AugmentPick(props: AugmentPickProps) {
             <button
               type="button"
               onClick={onPass}
-              className="ml-auto shrink-0 cursor-pointer rounded-[6px] border border-line px-[12px] py-[5px] text-[12px] font-bold text-mist hover:text-ink"
+              className="h-[48px] shrink-0 cursor-pointer rounded-[10px] border-2 border-line px-[16px] text-[15px] font-bold text-mist hover:text-ink"
             >
               넘기기 · 지금 증강 유지
             </button>

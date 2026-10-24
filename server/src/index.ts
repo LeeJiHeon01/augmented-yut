@@ -43,7 +43,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 
 const hub = createHub({
   turnMs: 18_000,
-  pickMs: 20_000,
+  pickMs: 60_000,
   awayTurnMs: 2_000,
   graceMs: 30_000,
   newCode: () => String(randomInt(0, 1_000_000)).padStart(6, '0'),

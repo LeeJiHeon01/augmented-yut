@@ -1,4 +1,4 @@
-import { useAugment, type AugmentTarget } from './actives';
+import { retireIfSpent, useAugment, type AugmentTarget } from './actives';
 import { chaosDue, runChaos } from './chaos';
 import { autoPick, draftDue, openDraft } from './draft';
 import { lastPlaceOf, leaderOf, logEffect, owns, playerOf, rollFor, updateStatus, type Roll } from './effects';
@@ -40,6 +40,7 @@ export function startGame(
       captures: 0,
       augmentUses: {},
       reserved: null,
+      retired: [],
       status: newPlayerStatus(),
     })),
     pieces,
@@ -142,6 +143,8 @@ function acceptThrow(state: GameState, playerId: PlayerId, roll: Roll, random: (
     log: [...state.log, { kind: 'THROW', playerId, auto: false, ...roll }],
   };
   for (const e of effects) next = logEffect(next, playerId, e.augmentId, e.detail);
+  // A reservation spent by this throw may have been the augment's last use.
+  if (usedReserve && player.reserved) next = retireIfSpent(next, playerId, player.reserved.augmentId);
   return settle(random, next);
 }
 
@@ -296,9 +299,12 @@ function settle(random: () => number, state: GameState): GameState {
   if (state.turn !== null && movesFor(state, state.turn).length > 0) return { ...state, phase: 'MOVE' };
   if (state.field.interrupting) return endInterrupt(random, state);
   const next = endTurn(state);
-  // Chaos first, then the augment draft of the same round.
-  const afterChaos = chaosDue(state, next) ? runChaos(next, random) : next;
-  return draftDue(state, next) ? openDraft(afterChaos, random) : afterChaos;
+  const chaos = chaosDue(state, next);
+  // Same round: the augment draft first, the chaos event once everyone has picked.
+  if (draftDue(state, next)) {
+    return openDraft(chaos ? { ...next, field: { ...next.field, chaosPending: true } } : next, random);
+  }
+  return chaos ? runChaos(next, random) : next;
 }
 
 /** Unusable results are discarded; the next seat starts its turn (extra turns and skips applied). */

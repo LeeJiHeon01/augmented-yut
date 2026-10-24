@@ -25,12 +25,18 @@ export interface RoomState {
   game: GameState | null;
 }
 
-const NAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,10}$/;
+/** Hangul, letters and digits; single spaces allowed between words. */
+const NAME_PATTERN = /^[가-힣a-zA-Z0-9]+( [가-힣a-zA-Z0-9]+)*$/;
+const NAME_MIN = 2;
+const NAME_MAX = 10;
 
 export function validateName(name: string): string {
-  const trimmed = name.trim();
-  if (!NAME_PATTERN.test(trimmed)) throw new RuleError('닉네임은 한글·영문·숫자 2~10자예요');
-  return trimmed;
+  // Ends are trimmed and runs of spaces become one.
+  const cleaned = String(name).trim().replace(/\s+/g, ' ');
+  if (cleaned.length < NAME_MIN || cleaned.length > NAME_MAX || !NAME_PATTERN.test(cleaned)) {
+    throw new RuleError('닉네임은 한글·영문·숫자·띄어쓰기 2~10자예요');
+  }
+  return cleaned;
 }
 
 export function createRoom(code: string, host: { id: PlayerId; name: string }): RoomState {

@@ -124,7 +124,7 @@ export function MainScreen() {
             <img alt="" src={pencil} className="size-[18px]" />
           </span>
           <span className={`text-[12px] ${error && !dialogOpen ? 'text-red' : 'text-dim'}`}>
-            {error && !dialogOpen ? error : '한글·영문·숫자 2~10자'}
+            {error && !dialogOpen ? error : '한글·영문·숫자·띄어쓰기 2~10자'}
           </span>
         </label>
 

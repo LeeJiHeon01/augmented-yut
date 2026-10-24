@@ -424,6 +424,7 @@ function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, rand
     ...p,
     augmentUses: { ...p.augmentUses, [pick]: (p.augmentUses[pick] ?? 0) + 1 },
   }));
+  next = retireSpent(next, victimOwner, pick);
   const mine = playerOf(next, capturer).augmentIds.filter((id) => ACTIVE_IDS.has(id));
   const gain = mine[Math.floor(random() * mine.length)];
   if (gain) {
@@ -437,6 +438,12 @@ function steal(state: GameState, capturer: PlayerId, victimOwner: PlayerId, rand
 
 /** Ids of augments used by pressing them (set by actives.ts to avoid an import cycle). */
 export const ACTIVE_IDS = new Set<string>();
+
+/** Set by actives.ts: take a used-up active out of the hand. */
+let retireSpent: (state: GameState, playerId: PlayerId, augmentId: string) => GameState = (s) => s;
+export function setRetire(fn: typeof retireSpent): void {
+  retireSpent = fn;
+}
 
 /** Rewards for the capturing player; `extra` is on top of the normal capture throw. */
 function onCapture(state: GameState, victimOwner: PlayerId, count: number, ctx: LandingContext): { state: GameState; extra: number } {
