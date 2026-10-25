@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { motion } from 'motion/react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   activeSpec,
   allied,
@@ -8,6 +9,7 @@ import {
   chaosEventById,
   completedRound,
   isActive,
+  MOVE_REVEAL_MS,
   moverOf,
   movesFor,
   planMove,
@@ -17,6 +19,7 @@ import {
   YUT_STEPS,
   type ActiveStatus,
   type AugmentTarget,
+  type GameLogEntry,
   type GameState,
   type Move,
   type Player,
@@ -34,8 +37,10 @@ import crown from '../assets/figma/crown-sm.svg';
 import { KIND_LABEL, TIER_META } from '../augmentMeta';
 import { COLOR_META } from '../colors';
 import { chipLabel, entryLine, formatClock, RESULT_LABEL, stepsText } from '../format';
+import { AugmentFlashCards, useAugmentFlashes } from '../game/AugmentFlash';
 import { Board, type BoardMarks, type Preview } from '../game/Board';
 import { YutThrow } from '../game/YutThrow';
+import { moveOutcome, type MoveOutcome } from '../moveOutcome';
 import { useGame } from '../store';
 import { Frame } from '../ui/Frame';
 import { AugmentSlots, Emblem, GoldButton, Pill } from '../ui/parts';
@@ -62,6 +67,8 @@ interface ResultChoice {
 const sameChoice = (a: ResultChoice | null, b: ResultChoice) => a?.result === b.result && a.as === b.as;
 const RESULT_BY_STEPS: Record<number, YutResult> = { 1: 'DO', 2: 'GAE', 3: 'GEOL', 4: 'YUT' };
 
+const PANEL_WIDTH = 290;
+
 /** Panel slots in seat order: top-left, top-right, bottom-left, bottom-right. */
 const PANEL_POSITIONS = [
   { left: 48, top: 238 },
@@ -86,24 +93,30 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
   const autoNotice = last?.auto === true && lastAge < NOTICE_MS;
 
   // The latest throw plays its animation once, timed by the local clock (server clocks drift).
-  // Throws already in the log when the screen opens (reload, rejoin) do not play.
-  const throwIndex = game.log.map((e) => e.kind).lastIndexOf('THROW');
+  const throwSeen = useReceived(game.log, 'THROW');
+  const throwIndex = throwSeen.index;
   const throwEntry = game.log[throwIndex];
-  const seenThrow = useRef<{ index: number; at: number }>({ index: throwIndex, at: 0 });
-  // A new game in the same room starts the log over.
-  if (throwIndex < seenThrow.current.index) seenThrow.current = { index: -1, at: 0 };
-  if (throwIndex > seenThrow.current.index) seenThrow.current = { index: throwIndex, at: Date.now() };
-  const throwShown =
-    throwEntry?.kind === 'THROW' && seenThrow.current.index === throwIndex && Date.now() - seenThrow.current.at < THROW_SHOW_MS
-      ? throwEntry
+  const throwShown = throwEntry?.kind === 'THROW' && Date.now() - throwSeen.at < THROW_SHOW_MS ? throwEntry : null;
+
+  // After a move the board stays in view for a moment (captures, defences); a draft or chaos event waits.
+  const moveSeen = useReceived(game.log, 'MOVE');
+  const revealUntil = moveSeen.at + MOVE_REVEAL_MS;
+  const revealing = Date.now() < revealUntil;
+  const outcome = revealing ? moveOutcome(game.log, room.logTimes, moveSeen.index, (id) => seatOf(id)?.name ?? '') : null;
+
+  const flashes = useAugmentFlashes(game.log);
+
+  // A chaos event that came with a move starts once that move's reveal ends (fixed when received).
+  const chaosSeen = useReceived(game.log, 'CHAOS', revealUntil);
+  const chaosEntry = game.log[chaosSeen.index];
+  const chaosStart = chaosSeen.at;
+  const chaosShown =
+    chaosEntry?.kind === 'CHAOS' && chaosSeen.at > 0 && Date.now() >= chaosStart && Date.now() - chaosStart < CHAOS_NOTICE_MS
+      ? chaosEntry
       : null;
 
-  const chaosIndex = game.log.map((e) => e.kind).lastIndexOf('CHAOS');
-  const chaosEntry = game.log[chaosIndex];
-  const chaosAge = room.logTimes[chaosIndex] ? now - room.logTimes[chaosIndex] : Infinity;
-  const chaosShown = chaosEntry?.kind === 'CHAOS' && chaosAge < CHAOS_NOTICE_MS ? chaosEntry : null;
-
-  const locked = autoNotice || chaosShown !== null;
+  const chaosWaiting = chaosSeen.at > 0 && Date.now() < chaosStart;
+  const locked = autoNotice || chaosShown !== null || chaosWaiting || outcome !== null;
   // C-S12: a delegate picks the turn player's move; they act on the turn player's pieces.
   const delegate = game.field.delegate?.owner === game.turn ? game.field.delegate : null;
   const isMover = moverOf(game) === me;
@@ -235,7 +248,14 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
         const seat = seatOf(player.id);
         const pos = PANEL_POSITIONS[i];
         return seat && pos ? (
-          <PlayerPanel key={player.id} player={player} seat={seat} game={game} isMe={player.id === me} position={pos} />
+          <Fragment key={player.id}>
+            <PlayerPanel player={player} seat={seat} game={game} isMe={player.id === me} position={pos} />
+            <AugmentFlashCards
+              flashes={flashes.filter((f) => f.playerId === player.id)}
+              panel={{ ...pos, width: PANEL_WIDTH }}
+              side={i % 2 === 0 ? 'left' : 'right'}
+            />
+          </Fragment>
         ) : null;
       })}
 
@@ -356,7 +376,7 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
 
       <MyAugments game={game} me={me} locked={locked} picking={targeting?.augmentId ?? null} onUse={startActive} />
 
-      {game.phase === 'AUGMENT_PICK' && game.draft && me && game.draft.offers[me] && (
+      {game.phase === 'AUGMENT_PICK' && !revealing && game.draft && me && game.draft.offers[me] && (
         <AugmentPick
           draft={game.draft}
           offer={game.draft.offers[me]}
@@ -371,6 +391,7 @@ export function GameScreen({ room, game }: { room: RoomView; game: GameState }) 
       )}
 
       {throwShown && !chaosShown && <YutThrow key={throwIndex} result={throwShown.result} />}
+      {outcome && !throwShown && <MoveOutcomeBanner outcome={outcome} />}
       {chaosShown && <ChaosEntrance eventId={chaosShown.eventId} round={chaosShown.round} />}
     </Frame>
   );
@@ -862,5 +883,48 @@ function ChoiceButton({ onClick, children }: { onClick: () => void; children: Re
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Index of the latest log entry of `kind` and when this browser received it (not before `notBefore`).
+ * Entries already in the log when the screen opens (reload, rejoin) count as old (`at` 0).
+ */
+function useReceived(log: GameState['log'], kind: GameLogEntry['kind'], notBefore = 0): { index: number; at: number } {
+  const index = log.map((e) => e.kind).lastIndexOf(kind);
+  const seen = useRef({ index, at: 0 });
+  // A new game in the same room starts the log over.
+  if (index < seen.current.index) seen.current = { index: -1, at: 0 };
+  if (index > seen.current.index) seen.current = { index, at: Math.max(Date.now(), notBefore) };
+  return seen.current;
+}
+
+const OUTCOME_TONE: Record<MoveOutcome['tone'], string> = {
+  CAPTURE: 'border-[#e0795f] text-[#ffb59f]',
+  BLOCKED: 'border-[#6fa8dc] text-[#b9dcff]',
+  FINISH: 'border-gold text-gold-light',
+  EFFECT: 'border-line text-ink',
+};
+
+/** What the last move did, just under the board (pieces stay visible) until the reveal ends. */
+function MoveOutcomeBanner({ outcome }: { outcome: MoveOutcome }) {
+  return (
+    <motion.div
+      className="pointer-events-none absolute top-[852px] left-[395px] z-30 flex w-[650px] flex-col items-center"
+      initial={{ opacity: 0, y: 12, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.25 }}
+    >
+      <div
+        className={`flex w-full flex-col items-center gap-[4px] rounded-[10px] border-[1.5px] bg-[rgba(14,22,36,0.97)] px-[20px] py-[10px] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ${OUTCOME_TONE[outcome.tone]}`}
+      >
+        <p className="text-center font-serif text-[22px] font-bold whitespace-nowrap">{outcome.title}</p>
+        {outcome.lines.length > 0 && (
+          <p className="w-full truncate text-center text-[13px] text-mist">
+            {outcome.lines.join('  ·  ')}
+          </p>
+        )}
+      </div>
+    </motion.div>
   );
 }

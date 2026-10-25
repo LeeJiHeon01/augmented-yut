@@ -211,6 +211,14 @@ describe('a full hand of six', () => {
     expect(done.log.find((e) => e.kind === 'AUGMENT' && e.playerId === 'a')).toMatchObject({ augmentId: card, replaced: full[0] });
   });
 
+  it('a picked augment starts with all its uses, even one used before it was swapped out', () => {
+    const s = opened();
+    const card = offerOf(s, 'a').cards[0]!;
+    const used = { ...s, players: s.players.map((p) => (p.id === 'a' ? { ...p, augmentUses: { ...p.augmentUses, [card]: 3 } } : p)) };
+    const done = autoPick(pickAugment(used, 'a', card, full[0]!), seq(0.1));
+    expect(done.players.find((p) => p.id === 'a')!.augmentUses[card]).toBe(0);
+  });
+
   it('may keep the hand; a timeout keeps it too', () => {
     const s = opened();
     const kept = autoPick(passDraft(s, 'a'), seq(0.1));

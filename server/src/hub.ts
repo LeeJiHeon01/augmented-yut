@@ -24,6 +24,8 @@ export interface HubOptions {
   graceMs: number;
   /** How long a dropped player keeps a lobby seat (long enough for a page reload). */
   lobbyGraceMs: number;
+  /** Extra draft time when a draft opens mid-game, while clients still show the last move. */
+  revealMs?: number;
   random?: () => number;
   newCode: () => string;
   /** Full view for the room; strip it per viewer (`viewFor`) before sending. */
@@ -177,7 +179,9 @@ export function createHub(options: HubOptions) {
       record.finishedAt = now;
       return;
     }
-    const ms = turnAway ? options.awayTurnMs : game.phase === 'AUGMENT_PICK' ? options.pickMs : options.turnMs;
+    const draftOpened = game.phase === 'AUGMENT_PICK' && previousGame !== null && previousGame.phase !== 'AUGMENT_PICK';
+    const pickMs = options.pickMs + (draftOpened ? (options.revealMs ?? 0) : 0);
+    const ms = turnAway ? options.awayTurnMs : game.phase === 'AUGMENT_PICK' ? pickMs : options.turnMs;
     record.deadline = now + ms;
     record.timer = setTimeout(() => onTimeout(record), ms);
   }

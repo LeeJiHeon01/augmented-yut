@@ -197,11 +197,14 @@ function grantPicks(state: GameState): GameState {
       const pick = picks.find((x) => x.id === p.id);
       if (!pick) return p;
       const { replace } = pick;
-      if (!replace) return { ...p, augmentIds: [...p.augmentIds, pick.augmentId] };
-      // The swapped-out augment keeps its use count for this game and drops any reservation.
+      // A newly picked augment starts with all its uses, even if it was held and swapped out before.
+      const augmentUses = { ...p.augmentUses, [pick.augmentId]: 0 };
+      if (!replace) return { ...p, augmentIds: [...p.augmentIds, pick.augmentId], augmentUses };
+      // The swapped-out augment drops any reservation.
       return {
         ...p,
         augmentIds: [...p.augmentIds.filter((id) => id !== replace), pick.augmentId],
+        augmentUses,
         reserved: p.reserved?.augmentId === replace ? null : p.reserved,
       };
     }),

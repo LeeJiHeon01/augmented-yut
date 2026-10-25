@@ -5,6 +5,7 @@ import {
   activate,
   backToLobby,
   chooseThrow,
+  MOVE_REVEAL_MS,
   splitResult,
   type AugmentTarget,
   type YutResult,
@@ -47,6 +48,7 @@ const hub = createHub({
   awayTurnMs: 2_000,
   graceMs: 30_000,
   lobbyGraceMs: 5_000,
+  revealMs: MOVE_REVEAL_MS,
   newCode: () => String(randomInt(0, 1_000_000)).padStart(6, '0'),
   onChange: (code, view) => sendRoom(code, view),
 });

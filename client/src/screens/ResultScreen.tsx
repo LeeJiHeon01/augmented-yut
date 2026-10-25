@@ -114,7 +114,7 @@ function RankCard({ rank, player, seat, game, isMe }: RankCardProps) {
       <div className={`h-px w-full ${first ? 'bg-[rgba(217,184,120,0.25)]' : 'bg-line-soft'}`} />
       <div className="flex w-full flex-col gap-[12px]">
         <div className="flex justify-between text-[11px]">
-          <p className="text-dim">함께한 증강</p>
+          <p className="text-dim">함께한 증강 {player.augmentIds.length + player.retired.length}개</p>
           <p className="text-mist">잡기 {player.captures}회</p>
         </div>
         <HeldAugments augmentIds={[...player.augmentIds, ...player.retired]} />
@@ -123,11 +123,11 @@ function RankCard({ rank, player, seat, game, isMe }: RankCardProps) {
   );
 }
 
-/** Augments the player held at the end, three per row with their names. */
+/** Augments the player held at the end, three per row with their names; past two rows it scrolls so the card keeps its height. */
 function HeldAugments({ augmentIds }: { augmentIds: string[] }) {
   if (augmentIds.length === 0) return <p className="py-[10px] text-center text-[11px] text-dim">고른 증강이 없어요</p>;
   return (
-    <div className="grid grid-cols-3 gap-x-[8px] gap-y-[10px]">
+    <div className="grid max-h-[112px] grid-cols-3 gap-x-[8px] gap-y-[10px] overflow-y-auto slim-scroll pr-[4px]">
       {augmentIds.map((id) => {
         const augment = augmentById(id);
         const tier = augment ? TIER_META[augment.rarity] : null;

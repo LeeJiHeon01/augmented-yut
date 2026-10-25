@@ -532,10 +532,21 @@ function spendPlan(state: GameState, playerId: PlayerId, plan: MovePlan): GameSt
   if (plan.spends.lonely) next = updateStatus(next, playerId, (s) => ({ turn: { ...s.turn, lonelyUsed: true } }));
   if (plan.spends.enemy) next = updateStatus(next, playerId, (s) => ({ turn: { ...s.turn, controlEnemy: false } }));
   // Passive step bonuses and choices used by this move each lose one use.
+  // Choices are logged (and spent) as effects; bonuses already show on the MOVE entry.
+  for (const id of plan.spends.passives) next = logEffect(next, playerId, id, PASSIVE_DETAIL[id] ?? '발동');
   const passiveBonuses = plan.bonuses.map((b) => b.augmentId).filter((id) => id && id !== 'A-G9');
-  for (const id of [...plan.spends.passives, ...passiveBonuses]) next = spendUse(next, playerId, id);
+  for (const id of passiveBonuses) next = spendUse(next, playerId, id);
   return next;
 }
+
+/** Log text for passives that change how a move is made. */
+const PASSIVE_DETAIL: Record<string, string> = {
+  'O-S1': '빽도를 도로 사용',
+  'A-S14': '빽도를 도로 사용',
+  'O-S9': '도를 개로 사용',
+  'O-S15': '마지막 길에서 빽도를 도로 이동',
+  'O-S7': '지나친 꼭짓점에서 지름길로 진입',
+};
 
 /** Make a move with every augment applied and log it. Turn bookkeeping stays in turn.ts. */
 export function executeMove(state: GameState, playerId: PlayerId, move: Move, random: () => number, leader: PlayerId | null): PlayResult {

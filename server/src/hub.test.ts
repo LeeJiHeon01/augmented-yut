@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { pickAugment, startRoomGame, type RoomView } from '@yut/shared';
+import { openDraft, pickAugment, startRoomGame, type RoomView } from '@yut/shared';
 import { createHub } from './hub';
 
-function setup() {
+function setup(revealMs?: number) {
   const views = new Map<string, RoomView | null>();
   const hub = createHub({
     turnMs: 18_000,
@@ -10,6 +10,7 @@ function setup() {
     awayTurnMs: 2_000,
     graceMs: 30_000,
     lobbyGraceMs: 5_000,
+    ...(revealMs ? { revealMs } : {}),
     random: () => 0.1,
     newCode: () => '123456',
     onChange: (code, view) => views.set(code, view),
@@ -67,6 +68,15 @@ describe('createHub', () => {
     vi.advanceTimersByTime(5_000);
     pick(hub, 'a');
     expect(views.get(code)?.deadline).toBe(deadline);
+  });
+
+  it('adds the move reveal to a draft that opens mid-game, not to the opening one', () => {
+    const { hub, views } = setup(2_500);
+    const code = startDraft(hub);
+    expect(views.get(code)?.deadline).toBe(Date.now() + 20_000);
+    for (const id of IDS) pick(hub, id);
+    hub.update('a', (room) => ({ ...room, game: room.game && openDraft(room.game, () => 0.1) }));
+    expect(views.get(code)?.deadline).toBe(Date.now() + 22_500);
   });
 
   it('lists who picked so per-player views can drop the other offers', () => {

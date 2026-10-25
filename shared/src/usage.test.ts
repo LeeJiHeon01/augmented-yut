@@ -67,6 +67,8 @@ describe('passive uses', () => {
     expect(player(movePiece(s, 'a', { pieceId: 'a-0', result: 'DO' }), 'a').augmentUses['O-S9']).toBeUndefined();
     const used = movePiece(s, 'a', { pieceId: 'a-0', result: 'DO', as: 'GAE' });
     expect(player(used, 'a').retired).toEqual(['O-S9']);
+    // Shown in the log like any other passive that fired.
+    expect(used.log.find((e) => e.kind === 'EFFECT')).toMatchObject({ playerId: 'a', augmentId: 'O-S9', detail: '도를 개로 사용' });
   });
 
   it('O-S7 counts only when passing a corner really took a shortcut', () => {

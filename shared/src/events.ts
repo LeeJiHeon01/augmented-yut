@@ -7,6 +7,9 @@ export type AckResult = { ok: true; code: string } | { ok: false; error: string 
 export type Ack = (result: AckResult) => void;
 
 /** Room as sent to clients, with timer and timing info. Times are server epoch ms. */
+/** After a move, clients keep the board in view this long before a draft or chaos event shows; the draft timer waits too. */
+export const MOVE_REVEAL_MS = 2_500;
+
 export interface RoomView extends RoomState {
   /** When the current action times out, or null outside a running game. */
   deadline: number | null;
